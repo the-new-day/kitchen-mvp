@@ -1,0 +1,54 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - gosec
+    - revive
+    - sqlclosecheck
+  settings:
+    errcheck:
+      check-type-assertions: true
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # readability of config structs beats a few padding bytes
+    revive:
+      rules:
+        - name: exported
+        - name: early-return
+        - name: unused-parameter
+        - name: context-as-argument
+        - name: error-strings
+        - name: errorf
+        - name: indent-error-flow
+        - name: var-naming
+  exclusions:
+    rules:
+      # Generated servers and clients are not ours to style.
+      - path: \.gen\.go$
+        linters:
+          - errcheck
+          - gocritic
+          - gosec
+          - revive
+      # Table-driven tests read better without the extra ceremony.
+      - path: _test\.go$
+        linters:
+          - bodyclose
+          - gosec
+
+# gofumpt only, no goimports: the module path `avito-kitchen` has no dot in
+# its first element, so every import-grouping tool classifies our own packages
+# as standard library. Running both formatters would make them fight over the
+# grouping on every file.
+formatters:
+  enable:
+    - gofumpt

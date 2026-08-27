@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+      # The linter ships as a binary (its own docs recommend that over
+      # `go install`), so the action installs it instead of `make lint`.
+      - uses: golangci/golangci-lint-action@v8
+
+      - name: Codegen is up to date
+        run: |
+          make generate
+          git diff --exit-code
+
+      - name: go.mod is tidy
+        run: |
+          make tidy
+          git diff --exit-code go.mod go.sum
