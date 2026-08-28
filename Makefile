@@ -3,7 +3,7 @@ up:
 .PHONY: up
 
 down:
-	docker compose down -v --remove-orphans
+	docker compose --profile "*" down -v --remove-orphans
 .PHONY: down
 
 logs:
@@ -11,7 +11,7 @@ logs:
 .PHONY: logs
 
 ps:
-	docker compose ps
+	docker compose --profile "*" ps -a
 .PHONY: ps
 
 build:
@@ -31,7 +31,9 @@ fmt:
 .PHONY: fmt
 
 generate:
-	go generate ./...
+	go tool oapi-codegen -config api/openapi/kitchen.cfg.yaml api/openapi/kitchen.yaml
+	go tool oapi-codegen -config api/openapi/partner.cfg.yaml api/openapi/partner.yaml
+	go tool oapi-codegen -config api/openapi/venue.cfg.yaml api/openapi/venue.yaml
 .PHONY: generate
 
 tidy:
@@ -39,21 +41,25 @@ tidy:
 .PHONY: tidy
 
 migrate-up:
-	docker compose --profile migrations run --rm migrator
+	docker compose run --rm migrator
 .PHONY: migrate-up
 
 migrate-down:
-	docker compose --profile migrations run --rm migrator down 1
+	docker compose run --rm migrator down 1
 .PHONY: migrate-down
 
 migrate-down-all:
-	docker compose --profile migrations run --rm migrator down -all
+	docker compose run --rm migrator down -all
 .PHONY: migrate-down-all
 
 migrate-create:
-	docker compose --profile migrations run --rm --entrypoint migrate migrator create -ext sql -dir /migrations -seq $(name)
+	docker compose run --rm --entrypoint migrate migrator create -ext sql -dir /migrations -seq $(name)
 .PHONY: migrate-create
 
 migrate-version:
-	docker compose --profile migrations run --rm migrator version
+	docker compose run --rm migrator version
 .PHONY: migrate-version
+
+seed:
+	docker compose run --rm seeder
+.PHONY: seed

@@ -1,0 +1,903 @@
+openapi: 3.0.3
+
+info:
+  title: Авито.Кухня — клиентский API
+  version: 1.0.0
+  description: |
+    API веб-клиента площадки: каталог заведений, корзина, заказы и поток
+    статусов заказа.
+
+    Пользователь идентифицируется заголовком `X-User-Id`. Аутентификация за
+    рамками MVP: считаем, что идентификатор пришёл от вышестоящего шлюза.
+
+    Все денежные величины — целое число копеек.
+
+servers:
+  - url: /api/v1
+
+security:
+  - UserId: []
+
+tags:
+  - name: catalog
+    description: Каталог заведений и меню
+  - name: cart
+    description: Корзина пользователя
+  - name: orders
+    description: Заказы и их статусы
+
+paths:
+  /cuisines:
+    get:
+      tags: [catalog]
+      operationId: listCuisines
+      summary: Справочник кухонь
+      description: Значения для фильтра `cuisine` в списке заведений.
+      responses:
+        "200":
+          description: Справочник кухонь
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CuisineList"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /venues:
+    get:
+      tags: [catalog]
+      operationId: listVenues
+      summary: Список заведений
+      parameters:
+        - name: q
+          in: query
+          description: Поиск по названию заведения.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: cuisine
+          in: query
+          description: Слаг кухни из справочника `/cuisines`.
+          schema:
+            type: string
+        - name: open_now
+          in: query
+          description: Только заведения с открытой сменой.
+          schema:
+            type: boolean
+        - name: sort
+          in: query
+          schema:
+            $ref: "#/components/schemas/VenueSort"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Страница списка заведений
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VenueList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /venues/{venue_id}:
+    get:
+      tags: [catalog]
+      operationId: getVenue
+      summary: Карточка заведения
+      parameters:
+        - $ref: "#/components/parameters/VenueId"
+      responses:
+        "200":
+          description: Карточка заведения
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Venue"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /venues/{venue_id}/menu:
+    get:
+      tags: [catalog]
+      operationId: getVenueMenu
+      summary: Меню заведения
+      description: |
+        Недоступные позиции остаются в выдаче с `is_available: false` и
+        заполненным `unavailable_reason`.
+      parameters:
+        - $ref: "#/components/parameters/VenueId"
+      responses:
+        "200":
+          description: Меню по категориям
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Menu"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /cart:
+    get:
+      tags: [cart]
+      operationId: getCart
+      summary: Текущая корзина
+      responses:
+        "200":
+          description: Корзина пользователя; у нового пользователя — пустая
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [cart]
+      operationId: clearCart
+      summary: Очистить корзину
+      responses:
+        "204":
+          description: Корзина очищена
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /cart/items:
+    put:
+      tags: [cart]
+      operationId: putCartItem
+      summary: Задать количество позиции в корзине
+      description: |
+        Устанавливает итоговое количество. `qty: 0` удаляет позицию.
+
+        В корзине могут лежать позиции только одного заведения: позиция другого
+        заведения при непустой корзине — `409 cart_venue_conflict`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutCartItemRequest"
+      responses:
+        "200":
+          description: Пересчитанная корзина
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /cart/items/{item_id}:
+    delete:
+      tags: [cart]
+      operationId: deleteCartItem
+      summary: Удалить позицию из корзины
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          description: Идентификатор позиции меню.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Пересчитанная корзина
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cart"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /cart/validate:
+    post:
+      tags: [cart]
+      operationId: validateCart
+      summary: Проверить корзину перед оформлением
+      description: |
+        Сверяет корзину с текущим состоянием меню и заведения и возвращает
+        список проблем. Клиент обязан вызвать её перед экраном оформления:
+        `POST /orders` при непустом списке проблем завершится ошибкой.
+      responses:
+        "200":
+          description: Результат проверки; проблемы перечислены в `problems`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CartValidation"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /orders:
+    get:
+      tags: [orders]
+      operationId: listOrders
+      summary: Заказы пользователя
+      parameters:
+        - name: status
+          in: query
+          description: Фильтр по статусу; можно передать несколько значений.
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/OrderStatus"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Страница списка заказов, новые сверху
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [orders]
+      operationId: createOrder
+      summary: Оформить заказ
+      x-idempotent: true
+      description: |
+        Создаёт заказ из текущей корзины и очищает её. Цены и названия позиций
+        копируются в заказ снапшотом.
+
+        Повторный запрос с тем же `Idempotency-Key` возвращает `200` и ранее
+        отданный ответ. Тот же ключ с другим телом — `422
+        idempotency_key_reuse`.
+
+        `expected_total` — сумма, которую пользователь видел на экране.
+        Расхождение с расчётом сервера даёт `409 price_mismatch`.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Уникальный ключ попытки оформления.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderRequest"
+      responses:
+        "200":
+          description: Ответ на повтор запроса с уже использованным ключом
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "201":
+          description: Заказ создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: |
+            Заказ не создан: `price_mismatch`, `out_of_stock`,
+            `item_unavailable`, `venue_closed`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: |
+            `below_minimum` — корзина дешевле минимальной суммы заказа;
+            `empty_cart`; `idempotency_key_reuse`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /orders/{order_id}:
+    get:
+      tags: [orders]
+      operationId: getOrder
+      summary: Карточка заказа
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: Карточка заказа
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /orders/{order_id}/cancel:
+    post:
+      tags: [orders]
+      operationId: cancelOrder
+      summary: Отменить заказ
+      description: |
+        Отмена возможна, пока заведение не начало готовить: из `CREATED` и
+        `ACCEPTED`. Повторная отмена уже отменённого заказа возвращает `200`.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelOrderRequest"
+      responses:
+        "200":
+          description: Заказ отменён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/InvalidTransition"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /orders/{order_id}/events:
+    get:
+      tags: [orders]
+      operationId: streamOrderEvents
+      summary: Поток статусов заказа
+      description: |
+        Server-Sent Events. Первым приходит событие `snapshot` с текущим
+        состоянием заказа, дальше — `status_changed` на каждый переход.
+        Поле `id` события — возрастающий номер записи в истории статусов;
+        он же передаётся в `Last-Event-ID` при переподключении, чтобы
+        получить пропущенные события.
+
+        Соединение закрывается после терминального статуса (`DELIVERED`,
+        `REJECTED`, `CANCELLED`).
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: Номер последнего полученного события.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Поток событий заказа
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    UserId:
+      type: apiKey
+      in: header
+      name: X-User-Id
+      description: Идентификатор пользователя, UUID.
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Курсор следующей страницы из поля `next_cursor`.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      description: Размер страницы.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    VenueId:
+      name: venue_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Запрос не прошёл валидацию
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: |
+        Ресурс не найден. Чужой заказ также отдаётся как `NotFound`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Действие противоречит текущему состоянию
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidTransition:
+      description: Переход запрещён из текущего статуса заказа
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Внутренняя ошибка
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Машиночитаемый код ошибки.
+          example: price_mismatch
+        message:
+          type: string
+          description: Человекочитаемое описание.
+        details:
+          type: object
+          additionalProperties: true
+          description: Подробности, зависящие от кода.
+        trace_id:
+          type: string
+          description: Идентификатор запроса; он же в логах сервиса.
+
+    Money:
+      type: integer
+      format: int64
+      minimum: 0
+      description: Сумма в копейках.
+
+    VenueSort:
+      type: string
+      enum: [name, delivery_fee, avg_cook_minutes]
+      default: name
+
+    OrderStatus:
+      type: string
+      enum:
+        - CREATED
+        - ACCEPTED
+        - COOKING
+        - READY
+        - DELIVERING
+        - DELIVERED
+        - REJECTED
+        - CANCELLED
+
+    UnavailableReason:
+      type: string
+      enum: [stopped, out_of_stock, venue_closed]
+
+    Cuisine:
+      type: object
+      required: [slug, name]
+      properties:
+        slug:
+          type: string
+          example: bakery
+        name:
+          type: string
+          example: Пекарня
+
+    CuisineList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Cuisine"
+
+    Venue:
+      type: object
+      required:
+        - id
+        - slug
+        - name
+        - address
+        - cuisines
+        - is_open
+        - min_order_amount
+        - delivery_fee
+        - avg_cook_minutes
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        address:
+          type: string
+        lat:
+          type: number
+          format: double
+          nullable: true
+        lon:
+          type: number
+          format: double
+          nullable: true
+        cuisines:
+          type: array
+          items:
+            $ref: "#/components/schemas/Cuisine"
+        is_open:
+          type: boolean
+          description: Смена заведения открыта, заказы принимаются.
+        min_order_amount:
+          $ref: "#/components/schemas/Money"
+        delivery_fee:
+          $ref: "#/components/schemas/Money"
+        avg_cook_minutes:
+          type: integer
+
+    VenueList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Venue"
+        next_cursor:
+          type: string
+          nullable: true
+          description: Курсор следующей страницы; `null` — страница последняя.
+
+    MenuItem:
+      type: object
+      required: [id, external_id, name, price, is_available]
+      properties:
+        id:
+          type: string
+          format: uuid
+        external_id:
+          type: string
+          description: Идентификатор позиции в системе заведения.
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          $ref: "#/components/schemas/Money"
+        is_available:
+          type: boolean
+        unavailable_reason:
+          allOf:
+            - $ref: "#/components/schemas/UnavailableReason"
+          nullable: true
+          description: Заполнено, когда `is_available` равно `false`.
+        stock_qty:
+          type: integer
+          nullable: true
+          description: Остаток; `null` — не ограничен.
+
+    MenuCategory:
+      type: object
+      required: [id, external_id, name, position, items]
+      properties:
+        id:
+          type: string
+          format: uuid
+        external_id:
+          type: string
+        name:
+          type: string
+        position:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MenuItem"
+
+    Menu:
+      type: object
+      required: [venue_id, categories]
+      properties:
+        venue_id:
+          type: string
+          format: uuid
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/MenuCategory"
+
+    CartItem:
+      type: object
+      required: [item_id, external_id, name, price, qty, line_total, is_available]
+      properties:
+        item_id:
+          type: string
+          format: uuid
+        external_id:
+          type: string
+        name:
+          type: string
+        price:
+          $ref: "#/components/schemas/Money"
+        qty:
+          type: integer
+          minimum: 1
+        line_total:
+          $ref: "#/components/schemas/Money"
+        is_available:
+          type: boolean
+
+    Cart:
+      type: object
+      required: [items, items_total, delivery_fee, total]
+      properties:
+        venue_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Заведение корзины; `null` — корзина пуста.
+        venue_name:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CartItem"
+        items_total:
+          $ref: "#/components/schemas/Money"
+        delivery_fee:
+          $ref: "#/components/schemas/Money"
+        total:
+          $ref: "#/components/schemas/Money"
+        min_order_amount:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          nullable: true
+
+    PutCartItemRequest:
+      type: object
+      required: [venue_id, item_id, qty]
+      properties:
+        venue_id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        qty:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Итоговое количество; `0` удаляет позицию.
+
+    CartProblemType:
+      type: string
+      enum:
+        - price_changed
+        - out_of_stock
+        - item_unavailable
+        - venue_closed
+        - below_minimum
+
+    CartProblem:
+      type: object
+      required: [type, message]
+      properties:
+        type:
+          $ref: "#/components/schemas/CartProblemType"
+        message:
+          type: string
+        item_id:
+          type: string
+          format: uuid
+          nullable: true
+        item_name:
+          type: string
+          nullable: true
+        old_price:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          nullable: true
+          description: Цена, по которой позиция лежала в корзине.
+        new_price:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          nullable: true
+        requested_qty:
+          type: integer
+          nullable: true
+        available_qty:
+          type: integer
+          nullable: true
+        shortfall:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          nullable: true
+          description: Сколько добрать до минимальной суммы заказа.
+
+    CartValidation:
+      type: object
+      required: [is_valid, problems, cart]
+      properties:
+        is_valid:
+          type: boolean
+          description: Проблем нет, заказ можно оформлять.
+        problems:
+          type: array
+          items:
+            $ref: "#/components/schemas/CartProblem"
+        cart:
+          allOf:
+            - $ref: "#/components/schemas/Cart"
+          description: Корзина, пересчитанная по актуальному меню.
+
+    CreateOrderRequest:
+      type: object
+      required: [address, phone, expected_total]
+      properties:
+        address:
+          type: string
+          minLength: 1
+          maxLength: 500
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 32
+        comment:
+          type: string
+          maxLength: 500
+        expected_total:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          description: Итоговая сумма, показанная пользователю.
+
+    OrderItem:
+      type: object
+      required: [external_id, name, price, qty, line_total]
+      properties:
+        external_id:
+          type: string
+        name:
+          type: string
+          description: Название на момент оформления заказа.
+        price:
+          $ref: "#/components/schemas/Money"
+        qty:
+          type: integer
+        line_total:
+          $ref: "#/components/schemas/Money"
+
+    OrderVenue:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    Order:
+      type: object
+      required:
+        - id
+        - number
+        - venue
+        - status
+        - items
+        - items_total
+        - delivery_fee
+        - total
+        - phone
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+          description: Человекочитаемый номер заказа.
+          example: AK-100042
+        venue:
+          $ref: "#/components/schemas/OrderVenue"
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        items_total:
+          $ref: "#/components/schemas/Money"
+        delivery_fee:
+          $ref: "#/components/schemas/Money"
+        total:
+          $ref: "#/components/schemas/Money"
+        address:
+          type: string
+          nullable: true
+        phone:
+          type: string
+        comment:
+          type: string
+        eta_minutes:
+          type: integer
+          nullable: true
+          description: Оценка времени готовности, названная заведением.
+        rejection_reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OrderList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+        next_cursor:
+          type: string
+          nullable: true
+
+    CancelOrderRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500

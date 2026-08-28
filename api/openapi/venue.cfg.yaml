@@ -1,0 +1,7 @@
+package: venueapi
+output: venue/internal/transport/http/venueapi/venue.gen.go
+generate:
+  models: true
+  chi-server: true
+  strict-server: true
+  embedded-spec: true

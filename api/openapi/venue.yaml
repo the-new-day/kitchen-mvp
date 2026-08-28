@@ -1,0 +1,300 @@
+openapi: 3.0.3
+
+info:
+  title: Демо-заведение — экран повара
+  version: 1.0.0
+  description: |
+    Внутренний API демо-сервиса заведения. Площадка его не вызывает: это экран
+    повара и ничего больше. Заказы сервис получает из Kafka, а статусы шлёт в
+    площадку партнёрским REST — оба канала он инициирует сам.
+
+    Аутентификации нет: сервис живёт в контуре заведения.
+
+    Реальный партнёр волен не иметь такого API вовсе — здесь он показывает один
+    правдоподобный способ реализации требований к заведению.
+
+    Все денежные величины — целое число копеек.
+
+servers:
+  - url: /
+
+tags:
+  - name: orders
+    description: Заказы на экране повара
+  - name: dishes
+    description: Номенклатура заведения
+
+paths:
+  /kitchen/orders:
+    get:
+      tags: [orders]
+      operationId: listKitchenOrders
+      summary: Заказы на кухне
+      parameters:
+        - name: state
+          in: query
+          description: Фильтр по состоянию заказа на кухне.
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/KitchenOrderState"
+      responses:
+        "200":
+          description: Заказы, старые сверху
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KitchenOrderList"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /kitchen/orders/{order_id}/accept:
+    post:
+      tags: [orders]
+      operationId: acceptKitchenOrder
+      summary: Принять заказ
+      description: Повар подтверждает заказ; площадка узнаёт об этом партнёрским REST.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/OrderState"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /kitchen/orders/{order_id}/reject:
+    post:
+      tags: [orders]
+      operationId: rejectKitchenOrder
+      summary: Отклонить заказ
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/OrderState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /kitchen/orders/{order_id}/ready:
+    post:
+      tags: [orders]
+      operationId: markKitchenOrderReady
+      summary: Заказ готов
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          $ref: "#/components/responses/OrderState"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /kitchen/dishes/{sku}/stop:
+    post:
+      tags: [dishes]
+      operationId: stopDish
+      summary: Отправить блюдо в стоп-лист
+      description: |
+        Блюдо кончилось. Сервис снимает его с продажи у себя и передаёт это
+        площадке через `PATCH /partner/menu/items/{external_id}`.
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          description: Идентификатор блюда в номенклатуре заведения.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Блюдо снято с продажи
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dish"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  parameters:
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      description: Идентификатор заказа на площадке.
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    OrderState:
+      description: Заказ после действия повара
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/KitchenOrder"
+    BadRequest:
+      description: Запрос не прошёл валидацию
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Заказ или блюдо не найдены
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Действие противоречит текущему состоянию заказа
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Внутренняя ошибка
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        trace_id:
+          type: string
+
+    Money:
+      type: integer
+      format: int64
+      minimum: 0
+      description: Сумма в копейках.
+
+    KitchenOrderState:
+      type: string
+      description: |
+        Состояние заказа на кухне: `NEW` — ждёт решения повара, `ACCEPTED` —
+        готовится, `READY` — готов к выдаче, `REJECTED` — отклонён.
+      enum: [NEW, ACCEPTED, READY, REJECTED]
+
+    KitchenOrderItem:
+      type: object
+      required: [sku, name, price, qty]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        price:
+          $ref: "#/components/schemas/Money"
+        qty:
+          type: integer
+
+    KitchenOrder:
+      type: object
+      required: [order_id, number, state, items, total, received_at]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+          description: Идентификатор заказа на площадке.
+        number:
+          type: string
+        state:
+          $ref: "#/components/schemas/KitchenOrderState"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/KitchenOrderItem"
+        total:
+          $ref: "#/components/schemas/Money"
+        comment:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    KitchenOrderList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/KitchenOrder"
+
+    Dish:
+      type: object
+      required: [sku, name, price, is_available]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        price:
+          $ref: "#/components/schemas/Money"
+        stock:
+          type: integer
+          nullable: true
+        is_available:
+          type: boolean
+
+    AcceptRequest:
+      type: object
+      properties:
+        eta_minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          description: Если не передано, берётся среднее время готовки заведения.
+
+    RejectRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500

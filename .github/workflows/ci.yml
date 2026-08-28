@@ -25,8 +25,6 @@ jobs:
       - name: Test
         run: make test
 
-      # The linter ships as a binary (its own docs recommend that over
-      # `go install`), so the action installs it instead of `make lint`.
       - uses: golangci/golangci-lint-action@v8
 
       - name: Codegen is up to date

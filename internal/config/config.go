@@ -17,6 +17,7 @@ type Config struct {
 	Env      string     `env:"APP_ENV"   envDefault:"dev"`
 	LogLevel slog.Level `env:"LOG_LEVEL" envDefault:"info"`
 	HTTP     HTTP       `envPrefix:"HTTP_"`
+	Postgres Postgres   `envPrefix:"POSTGRES_"`
 }
 
 // HTTP configures the embedded HTTP server. It sets no write deadline, so
@@ -26,6 +27,11 @@ type HTTP struct {
 	ReadHeaderTimeout time.Duration `env:"READ_HEADER_TIMEOUT" envDefault:"5s"`
 	IdleTimeout       time.Duration `env:"IDLE_TIMEOUT"        envDefault:"60s"`
 	ShutdownTimeout   time.Duration `env:"SHUTDOWN_TIMEOUT"    envDefault:"15s"`
+}
+
+// Postgres configures the connection to the platform database.
+type Postgres struct {
+	DSN string `env:"DSN" envDefault:"postgres://kitchen:kitchen@localhost:5432/kitchen?sslmode=disable"`
 }
 
 // Load reads the configuration from the environment.

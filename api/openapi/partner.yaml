@@ -1,0 +1,677 @@
+openapi: 3.0.3
+
+info:
+  title: Авито.Кухня — партнёрский API
+  version: 1.0.0
+  description: |
+    API заведения. Через него заведение синхронизирует меню, открывает и
+    закрывает смену и сообщает статусы заказов.
+
+    Заказы заведение получает не отсюда, а из своего топика Kafka
+    (`kitchen.orders.v1`). Оба канала инициируются заведением наружу, входящие
+    подключения к кассе не нужны. Ручка `GET /partner/orders` существует для
+    заведений без Kafka: опрос по курсору.
+
+    Аутентификация — заголовок `X-Api-Key`. Ключ выдаётся при онбординге и
+    определяет заведение: `venue_id` в запросах не передаётся.
+
+    Все ручки смены статуса идемпотентны: повтор на уже применённом статусе
+    возвращает `200`. Переход, запрещённый из текущего статуса, — `409`
+    с текущим статусом в `details`.
+
+    Все денежные величины — целое число копеек.
+
+servers:
+  - url: /api/v1
+
+security:
+  - ApiKey: []
+
+tags:
+  - name: menu
+    description: Синхронизация меню и стоп-листы
+  - name: shift
+    description: Смена заведения
+  - name: orders
+    description: Заказы и переходы статусов
+
+paths:
+  /partner/me:
+    get:
+      tags: [menu]
+      operationId: getMe
+      summary: Заведение, которому принадлежит ключ
+      description: Первый вызов при старте кассы — проверка ключа и своих настроек.
+      responses:
+        "200":
+          description: Профиль заведения
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerVenue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/menu:
+    post:
+      tags: [menu]
+      operationId: syncMenu
+      summary: Полная синхронизация меню
+      description: |
+        Выгрузка — полный слепок меню заведения. Позиции сопоставляются по
+        `external_id`: известные обновляются, новые создаются, отсутствующие в
+        выгрузке снимаются с продажи (`is_available: false`), но не удаляются —
+        на них ссылаются прошлые заказы.
+
+        Повторная выгрузка того же слепка ничего не меняет.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MenuSyncRequest"
+      responses:
+        "200":
+          description: Меню синхронизировано
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MenuSyncResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/menu/items/{external_id}:
+    patch:
+      tags: [menu]
+      operationId: patchMenuItem
+      summary: Точечное изменение позиции
+      description: |
+        Стоп-лист, цена и остаток одной позиции — без полной выгрузки меню.
+        Переданы только изменяемые поля.
+      parameters:
+        - name: external_id
+          in: path
+          required: true
+          description: Идентификатор позиции в системе заведения.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MenuItemPatch"
+      responses:
+        "200":
+          description: Обновлённая позиция
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerMenuItem"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/shift/open:
+    post:
+      tags: [shift]
+      operationId: openShift
+      summary: Открыть смену
+      description: Заведение появляется в выдаче каталога и начинает принимать заказы.
+      responses:
+        "200":
+          description: Состояние смены
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shift"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/shift/close:
+    post:
+      tags: [shift]
+      operationId: closeShift
+      summary: Закрыть смену
+      description: |
+        Новые заказы не принимаются, заведение уходит из выдачи с
+        `open_now=true`. Уже принятые заказы закрытие смены не отменяет.
+      responses:
+        "200":
+          description: Состояние смены
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shift"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/orders:
+    get:
+      tags: [orders]
+      operationId: listPartnerOrders
+      summary: Заказы заведения
+      description: |
+        Опрос для заведений без Kafka-консьюмера: `since` — момент последнего
+        успешного опроса, `cursor` — продолжение страницы.
+      parameters:
+        - name: status
+          in: query
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/OrderStatus"
+        - name: since
+          in: query
+          description: Только заказы, созданные позже указанного момента.
+          schema:
+            type: string
+            format: date-time
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Страница списка заказов, старые сверху
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerOrderList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/orders/{order_id}:
+    get:
+      tags: [orders]
+      operationId: getPartnerOrder
+      summary: Карточка заказа
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: Карточка заказа
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerOrder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/orders/{order_id}/accept:
+    post:
+      tags: [orders]
+      operationId: acceptOrder
+      summary: Принять заказ
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptOrderRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/OrderState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/InvalidTransition"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/orders/{order_id}/reject:
+    post:
+      tags: [orders]
+      operationId: rejectOrder
+      summary: Отклонить заказ
+      description: Остатки позиций возвращаются в меню, клиент получает статус `REJECTED`.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectOrderRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/OrderState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/InvalidTransition"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/orders/{order_id}/cooking:
+    post:
+      tags: [orders]
+      operationId: startCooking
+      summary: Начать готовить
+      description: С этого момента клиент отменить заказ уже не может.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          $ref: "#/components/responses/OrderState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/InvalidTransition"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/orders/{order_id}/ready:
+    post:
+      tags: [orders]
+      operationId: markReady
+      summary: Заказ готов
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          $ref: "#/components/responses/OrderState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/InvalidTransition"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /partner/orders/{order_id}/handover:
+    post:
+      tags: [orders]
+      operationId: handoverOrder
+      summary: Передать заказ курьеру
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          $ref: "#/components/responses/OrderState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/InvalidTransition"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: Ключ заведения, выданный при онбординге.
+
+  parameters:
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    OrderState:
+      description: Заказ после перехода
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PartnerOrder"
+    BadRequest:
+      description: Запрос не прошёл валидацию
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Ключ отсутствует, отозван или неизвестен
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: |
+        Ресурс не найден. Заказ другого заведения также отдаётся как `404`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidTransition:
+      description: |
+        Переход запрещён из текущего статуса. Текущий статус — в
+        `details.current_status`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Внутренняя ошибка
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: invalid_transition
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        trace_id:
+          type: string
+
+    Money:
+      type: integer
+      format: int64
+      minimum: 0
+      description: Сумма в копейках.
+
+    OrderStatus:
+      type: string
+      enum:
+        - CREATED
+        - ACCEPTED
+        - COOKING
+        - READY
+        - DELIVERING
+        - DELIVERED
+        - REJECTED
+        - CANCELLED
+
+    PartnerVenue:
+      type: object
+      required:
+        - venue_id
+        - slug
+        - name
+        - is_open
+        - min_order_amount
+        - delivery_fee
+        - avg_cook_minutes
+      properties:
+        venue_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        is_open:
+          type: boolean
+        min_order_amount:
+          $ref: "#/components/schemas/Money"
+        delivery_fee:
+          $ref: "#/components/schemas/Money"
+        avg_cook_minutes:
+          type: integer
+        orders_topic:
+          type: string
+          description: Топик Kafka, из которого заведение читает свои заказы.
+          example: kitchen.orders.v1
+
+    MenuSyncItem:
+      type: object
+      required: [external_id, name, price]
+      properties:
+        external_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 1000
+        price:
+          $ref: "#/components/schemas/Money"
+        is_available:
+          type: boolean
+          default: true
+        stock_qty:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Остаток; `null` — не ограничен.
+
+    MenuSyncCategory:
+      type: object
+      required: [external_id, name, items]
+      properties:
+        external_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        position:
+          type: integer
+          default: 0
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MenuSyncItem"
+
+    MenuSyncRequest:
+      type: object
+      required: [categories]
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/MenuSyncCategory"
+
+    MenuSyncResult:
+      type: object
+      required: [categories_total, items_created, items_updated, items_deactivated]
+      properties:
+        categories_total:
+          type: integer
+        items_created:
+          type: integer
+        items_updated:
+          type: integer
+        items_deactivated:
+          type: integer
+          description: Позиции, отсутствовавшие в выгрузке и снятые с продажи.
+
+    MenuItemPatch:
+      type: object
+      description: Пустой объект допустим и ничего не меняет.
+      properties:
+        price:
+          allOf:
+            - $ref: "#/components/schemas/Money"
+          nullable: true
+        is_available:
+          type: boolean
+          nullable: true
+        stock_qty:
+          type: integer
+          minimum: 0
+          nullable: true
+
+    PartnerMenuItem:
+      type: object
+      required: [external_id, name, price, is_available]
+      properties:
+        external_id:
+          type: string
+        category_external_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          $ref: "#/components/schemas/Money"
+        is_available:
+          type: boolean
+        stock_qty:
+          type: integer
+          nullable: true
+
+    Shift:
+      type: object
+      required: [venue_id, is_open]
+      properties:
+        venue_id:
+          type: string
+          format: uuid
+        is_open:
+          type: boolean
+
+    PartnerOrderItem:
+      type: object
+      required: [external_id, name, price, qty, line_total]
+      properties:
+        external_id:
+          type: string
+          description: |
+            Идентификатор позиции в номенклатуре заведения: касса печатает
+            заказ, не заглядывая в таблицу соответствий.
+        name:
+          type: string
+        price:
+          $ref: "#/components/schemas/Money"
+        qty:
+          type: integer
+        line_total:
+          $ref: "#/components/schemas/Money"
+
+    PartnerOrder:
+      type: object
+      required:
+        - id
+        - number
+        - status
+        - items
+        - items_total
+        - total
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerOrderItem"
+        items_total:
+          $ref: "#/components/schemas/Money"
+        total:
+          $ref: "#/components/schemas/Money"
+        address:
+          type: string
+          nullable: true
+        phone:
+          type: string
+        comment:
+          type: string
+        eta_minutes:
+          type: integer
+          nullable: true
+        rejection_reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    PartnerOrderList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartnerOrder"
+        next_cursor:
+          type: string
+          nullable: true
+
+    AcceptOrderRequest:
+      type: object
+      required: [eta_minutes]
+      properties:
+        eta_minutes:
+          type: integer
+          minimum: 1
+          maximum: 240
+          description: Через сколько минут заказ будет готов.
+
+    RejectOrderRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500

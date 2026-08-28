@@ -1,0 +1,264 @@
+asyncapi: 3.0.0
+
+info:
+  title: Авито.Кухня — события
+  version: 1.0.0
+  description: |
+    Топики Kafka, которые публикует площадка. Все сообщения приходят в одном
+    конверте: `event_id`, `event_type`, `occurred_at`, `aggregate_id`,
+    `version` и `payload` события.
+
+    Доставка — at-least-once. Дубли неизбежны, потребитель обязан
+    дедуплицировать по `event_id`.
+
+    Порядок гарантируется в пределах ключа партиционирования: заказы одного
+    заведения и статусы одного заказа не переупорядочиваются.
+
+    Все денежные величины — целое число копеек.
+
+servers:
+  redpanda:
+    host: redpanda:9092
+    protocol: kafka
+    description: Брокер для MVP.
+
+channels:
+  orders:
+    address: kitchen.orders.v1
+    title: Заказы заведениям
+    description: |
+      Ключ партиционирования — `venue_id`: заведение читает свои заказы строго
+      по порядку. Заведение подключается со своей consumer group, выданной при
+      онбординге; группа фиксирована, чтобы перезапуск кассы продолжал чтение
+      с прошлого offset.
+    messages:
+      orderCreated:
+        $ref: "#/components/messages/OrderCreated"
+      orderCancelled:
+        $ref: "#/components/messages/OrderCancelled"
+
+  orderStatus:
+    address: kitchen.order-status.v1
+    title: Статусы заказов
+    description: |
+      Ключ партиционирования — `order_id`. Читают SSE-хабы: каждый инстанс
+      `kitchen-api` со своей уникальной группой.
+    messages:
+      orderStatusChanged:
+        $ref: "#/components/messages/OrderStatusChanged"
+
+operations:
+  publishOrderCreated:
+    action: send
+    channel:
+      $ref: "#/channels/orders"
+    messages:
+      - $ref: "#/channels/orders/messages/orderCreated"
+
+  publishOrderCancelled:
+    action: send
+    channel:
+      $ref: "#/channels/orders"
+    messages:
+      - $ref: "#/channels/orders/messages/orderCancelled"
+
+  publishOrderStatusChanged:
+    action: send
+    channel:
+      $ref: "#/channels/orderStatus"
+    messages:
+      - $ref: "#/channels/orderStatus/messages/orderStatusChanged"
+
+components:
+  messages:
+    OrderCreated:
+      name: order.created
+      title: Заказ создан
+      contentType: application/json
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              event_type:
+                const: order.created
+              payload:
+                $ref: "#/components/schemas/OrderCreatedPayload"
+
+    OrderCancelled:
+      name: order.cancelled
+      title: Заказ отменён клиентом или системой
+      contentType: application/json
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              event_type:
+                const: order.cancelled
+              payload:
+                $ref: "#/components/schemas/OrderCancelledPayload"
+
+    OrderStatusChanged:
+      name: order.status_changed
+      title: Статус заказа изменился
+      contentType: application/json
+      payload:
+        allOf:
+          - $ref: "#/components/schemas/Envelope"
+          - type: object
+            properties:
+              event_type:
+                const: order.status_changed
+              payload:
+                $ref: "#/components/schemas/OrderStatusChangedPayload"
+
+  schemas:
+    Envelope:
+      type: object
+      required: [event_id, event_type, occurred_at, aggregate_id, version, payload]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: Ключ дедупликации на стороне потребителя.
+        event_type:
+          type: string
+          enum: [order.created, order.cancelled, order.status_changed]
+        occurred_at:
+          type: string
+          format: date-time
+          description: Момент доменного изменения, а не публикации в брокер.
+        aggregate_id:
+          type: string
+          format: uuid
+          description: Идентификатор заказа.
+        version:
+          type: integer
+          format: int64
+          description: Версия заказа после изменения.
+        payload:
+          type: object
+
+    Money:
+      type: integer
+      format: int64
+      minimum: 0
+      description: Сумма в копейках.
+
+    OrderStatus:
+      type: string
+      enum:
+        - CREATED
+        - ACCEPTED
+        - COOKING
+        - READY
+        - DELIVERING
+        - DELIVERED
+        - REJECTED
+        - CANCELLED
+
+    OrderItem:
+      type: object
+      required: [external_id, name, price, qty, line_total]
+      properties:
+        external_id:
+          type: string
+          description: Идентификатор позиции в номенклатуре заведения.
+        name:
+          type: string
+        price:
+          $ref: "#/components/schemas/Money"
+        qty:
+          type: integer
+          minimum: 1
+        line_total:
+          $ref: "#/components/schemas/Money"
+
+    OrderCreatedPayload:
+      type: object
+      required: [order_id, number, venue_id, status, items, items_total, total, created_at]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        number:
+          type: string
+          example: AK-100042
+        venue_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        items_total:
+          $ref: "#/components/schemas/Money"
+        delivery_fee:
+          $ref: "#/components/schemas/Money"
+        total:
+          $ref: "#/components/schemas/Money"
+        address:
+          type: string
+        phone:
+          type: string
+        comment:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    OrderCancelledPayload:
+      type: object
+      required: [order_id, number, venue_id, cancelled_at]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        number:
+          type: string
+        venue_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        cancelled_at:
+          type: string
+          format: date-time
+
+    OrderStatusChangedPayload:
+      type: object
+      required: [order_id, user_id, venue_id, to_status, actor, seq, changed_at]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        venue_id:
+          type: string
+          format: uuid
+        from_status:
+          $ref: "#/components/schemas/OrderStatus"
+        to_status:
+          $ref: "#/components/schemas/OrderStatus"
+        actor:
+          type: string
+          enum: [customer, venue, system]
+        reason:
+          type: string
+        eta_minutes:
+          type: integer
+        seq:
+          type: integer
+          format: int64
+          description: |
+            Номер записи в истории статусов заказа. Клиент SSE отбрасывает по
+            нему события, уже вошедшие в снапшот, и продолжает с него после
+            обрыва соединения.
+        changed_at:
+          type: string
+          format: date-time

@@ -39,16 +39,17 @@ linters:
           - gocritic
           - gosec
           - revive
-      # Table-driven tests read better without the extra ceremony.
+      # Demo API keys of the pilot venues;
+      # the database stores only their SHA-256 hashes.
+      - path: cmd/seed/data\.go$
+        text: "G101"
+        linters:
+          - gosec
       - path: _test\.go$
         linters:
           - bodyclose
           - gosec
 
-# gofumpt only, no goimports: the module path `avito-kitchen` has no dot in
-# its first element, so every import-grouping tool classifies our own packages
-# as standard library. Running both formatters would make them fight over the
-# grouping on every file.
 formatters:
   enable:
     - gofumpt

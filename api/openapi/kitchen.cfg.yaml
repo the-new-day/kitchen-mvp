@@ -1,0 +1,10 @@
+package: kitchenapi
+output: internal/transport/http/kitchenapi/kitchen.gen.go
+generate:
+  models: true
+  chi-server: true
+  strict-server: true
+  embedded-spec: true
+output-options:
+  exclude-operation-ids:
+    - streamOrderEvents
