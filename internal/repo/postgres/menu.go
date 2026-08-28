@@ -33,6 +33,7 @@ type menuRow struct {
 	itemName           *string
 	itemDescription    *string
 	itemPrice          *int64
+	itemPosition       *int
 	itemIsAvailable    *bool
 	itemStockQty       *int
 }
@@ -44,12 +45,13 @@ func (r *MenuRepo) VenueMenu(ctx context.Context, venueID uuid.UUID) (catalog.Me
 	const query = `
 		SELECT v.is_open,
 		       c.id, c.external_id, c.name, c.position,
-		       i.id, i.external_id, i.name, i.description, i.price, i.is_available, i.stock_qty
+		       i.id, i.external_id, i.name, i.description, i.price, i.position,
+		       i.is_available, i.stock_qty
 		FROM venues v
 		LEFT JOIN menu_categories c ON c.venue_id = v.id
 		LEFT JOIN menu_items i ON i.category_id = c.id
 		WHERE v.id = $1 AND v.is_active
-		ORDER BY c.position, c.name, c.id, i.name`
+		ORDER BY c.position, c.name, c.id, i.position, i.name`
 
 	rows, err := r.db.conn(ctx).Query(ctx, query, venueID)
 	if err != nil {
@@ -63,7 +65,7 @@ func (r *MenuRepo) VenueMenu(ctx context.Context, venueID uuid.UUID) (catalog.Me
 			&m.venueIsOpen,
 			&m.categoryID, &m.categoryExternalID, &m.categoryName, &m.categoryPosition,
 			&m.itemID, &m.itemExternalID, &m.itemName, &m.itemDescription,
-			&m.itemPrice, &m.itemIsAvailable, &m.itemStockQty,
+			&m.itemPrice, &m.itemPosition, &m.itemIsAvailable, &m.itemStockQty,
 		)
 	})
 	if err != nil {
@@ -105,6 +107,7 @@ func assembleMenu(venueID uuid.UUID, rows []menuRow) catalog.Menu {
 			Name:        *row.itemName,
 			Description: *row.itemDescription,
 			Price:       *row.itemPrice,
+			Position:    *row.itemPosition,
 			IsAvailable: *row.itemIsAvailable,
 			StockQty:    row.itemStockQty,
 		})

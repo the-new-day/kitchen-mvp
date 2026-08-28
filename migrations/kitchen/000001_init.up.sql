@@ -74,6 +74,7 @@ CREATE TABLE menu_items (
     name         text NOT NULL,
     description  text NOT NULL DEFAULT '',
     price        bigint NOT NULL CHECK (price >= 0),
+    position     integer NOT NULL DEFAULT 0,
     is_available boolean NOT NULL DEFAULT true,
     stock_qty    integer CHECK (stock_qty >= 0),
     created_at   timestamptz NOT NULL DEFAULT now(),
@@ -81,7 +82,7 @@ CREATE TABLE menu_items (
     UNIQUE (venue_id, external_id)
 );
 
-CREATE INDEX menu_items_category_id_position_idx ON menu_items (category_id, name);
+CREATE INDEX menu_items_category_id_position_idx ON menu_items (category_id, position, name);
 
 CREATE TABLE carts (
     id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),

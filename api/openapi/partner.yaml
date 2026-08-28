@@ -507,11 +507,11 @@ components:
           type: string
           minLength: 1
           maxLength: 200
-        position:
-          type: integer
-          default: 0
         items:
           type: array
+          description: |
+            Позиции в том порядке, в каком заведение показывает их в
+            категории: порядок массива и есть порядок показа.
           items:
             $ref: "#/components/schemas/MenuSyncItem"
 
@@ -521,6 +521,9 @@ components:
       properties:
         categories:
           type: array
+          description: |
+            Категории в том порядке, в каком заведение показывает их в меню:
+            порядок массива и есть порядок показа.
           items:
             $ref: "#/components/schemas/MenuSyncCategory"
 

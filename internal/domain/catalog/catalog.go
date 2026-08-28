@@ -34,6 +34,7 @@ type MenuItem struct {
 	Name        string
 	Description string
 	Price       int64
+	Position    int
 	IsAvailable bool
 	StockQty    *int
 }

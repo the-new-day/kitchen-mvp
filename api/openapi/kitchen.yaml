@@ -599,7 +599,7 @@ components:
 
     MenuItem:
       type: object
-      required: [id, external_id, name, price, is_available]
+      required: [id, external_id, name, price, position, is_available]
       properties:
         id:
           type: string
@@ -613,6 +613,9 @@ components:
           type: string
         price:
           $ref: "#/components/schemas/Money"
+        position:
+          type: integer
+          description: Порядок позиции внутри категории, заданный заведением.
         is_available:
           type: boolean
         unavailable_reason:

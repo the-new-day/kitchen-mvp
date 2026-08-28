@@ -148,6 +148,7 @@ func toMenuItem(i catalog.MenuItem, venueOpen bool) kitchenapi.MenuItem {
 		ExternalId:  i.ExternalID,
 		Name:        i.Name,
 		Price:       i.Price,
+		Position:    i.Position,
 		IsAvailable: available,
 		StockQty:    i.StockQty,
 	}

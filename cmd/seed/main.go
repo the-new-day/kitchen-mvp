@@ -141,13 +141,17 @@ func seedCategory(ctx context.Context, tx pgx.Tx, venueID string, c category) er
 	}
 
 	const insertItem = `
-		INSERT INTO menu_items (venue_id, category_id, external_id, name, description, price, stock_qty)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO menu_items (venue_id, category_id, external_id, name, description,
+		                        price, position, stock_qty)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (venue_id, external_id) DO NOTHING`
 
-	for _, i := range c.items {
+	// Items are shown in the order they are declared here, with gaps left
+	// between positions so that one can be inserted without renumbering.
+	for idx, i := range c.items {
 		if _, err := tx.Exec(ctx, insertItem,
-			venueID, categoryID, i.externalID, i.name, i.description, i.price, i.stockQty,
+			venueID, categoryID, i.externalID, i.name, i.description,
+			i.price, (idx+1)*10, i.stockQty,
 		); err != nil {
 			return fmt.Errorf("insert item %s: %w", i.externalID, err)
 		}

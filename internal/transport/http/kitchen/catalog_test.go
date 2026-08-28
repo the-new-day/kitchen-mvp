@@ -86,8 +86,8 @@ func TestToMenuKeepsCategoriesAndItems(t *testing.T) {
 			Name:       "Пицца",
 			Position:   10,
 			Items: []catalog.MenuItem{
-				{ExternalID: "SKU-MARGHERITA", IsAvailable: true},
-				{ExternalID: "SKU-PEPPERONI", IsAvailable: false},
+				{ExternalID: "SKU-MARGHERITA", IsAvailable: true, Position: 10},
+				{ExternalID: "SKU-PEPPERONI", IsAvailable: false, Position: 20},
 			},
 		}},
 	}
@@ -103,6 +103,12 @@ func TestToMenuKeepsCategoriesAndItems(t *testing.T) {
 	for _, item := range got.Categories[0].Items {
 		if item.IsAvailable {
 			t.Errorf("%s is available while the venue is closed", item.ExternalId)
+		}
+	}
+
+	for i, want := range []int{10, 20} {
+		if got.Categories[0].Items[i].Position != want {
+			t.Errorf("item %d position = %d, want %d", i, got.Categories[0].Items[i].Position, want)
 		}
 	}
 }
