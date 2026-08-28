@@ -36,6 +36,10 @@ generate:
 	go tool oapi-codegen -config api/openapi/venue.cfg.yaml api/openapi/venue.yaml
 .PHONY: generate
 
+mocks:
+	go tool mockery
+.PHONY: mocks
+
 tidy:
 	go mod tidy
 .PHONY: tidy

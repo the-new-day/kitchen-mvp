@@ -39,6 +39,12 @@ linters:
           - gocritic
           - gosec
           - revive
+      # Generated mocks are not ours to style either.
+      - path: _mock\.go$
+        linters:
+          - errcheck
+          - gocritic
+          - revive
       # Demo API keys of the pilot venues;
       # the database stores only their SHA-256 hashes.
       - path: cmd/seed/data\.go$

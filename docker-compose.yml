@@ -81,6 +81,7 @@ services:
     environment:
       <<: *app-env
       HTTP_ADDR: ":8081"
+      POSTGRES_DSN: postgres://kitchen:kitchen@postgres:5432/kitchen?sslmode=disable
     ports:
       - "8081:8081"
     healthcheck:

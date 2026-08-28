@@ -1,7 +1,7 @@
 package kitchenapi_test
 
 import (
-	"avito-kitchen/internal/transport/http/kitchenapi"
+	"avito-kitchen/internal/api/kitchenapi"
 	"testing"
 )
 

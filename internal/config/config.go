@@ -29,9 +29,11 @@ type HTTP struct {
 	ShutdownTimeout   time.Duration `env:"SHUTDOWN_TIMEOUT"    envDefault:"15s"`
 }
 
-// Postgres configures the connection to the platform database.
+// Postgres configures the connection pool to the platform database.
 type Postgres struct {
-	DSN string `env:"DSN" envDefault:"postgres://kitchen:kitchen@localhost:5432/kitchen?sslmode=disable"`
+	DSN            string        `env:"DSN"             envDefault:"postgres://kitchen:kitchen@localhost:5432/kitchen?sslmode=disable"`
+	MaxConns       int32         `env:"MAX_CONNS"       envDefault:"10"`
+	ConnectTimeout time.Duration `env:"CONNECT_TIMEOUT" envDefault:"5s"`
 }
 
 // Load reads the configuration from the environment.
@@ -40,7 +42,7 @@ func Load() (Config, error) {
 
 	opts := env.Options{
 		FuncMap: map[reflect.Type]env.ParserFunc{
-			reflect.TypeOf(slog.Level(0)): parseLogLevel,
+			reflect.TypeFor[slog.Level](): parseLogLevel,
 		},
 	}
 	if err := env.ParseWithOptions(&cfg, opts); err != nil {

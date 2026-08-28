@@ -1,0 +1,12 @@
+all: false
+dir: "{{.InterfaceDir}}/mocks"
+pkgname: "mocks"
+filename: "{{.InterfaceName | snakecase}}_mock.go"
+force-file-write: true
+structname: "{{.Mock}}{{.InterfaceName}}"
+template: testify
+packages:
+  avito-kitchen/internal/usecase/catalog:
+    interfaces:
+      VenueRepository: {}
+      MenuRepository: {}

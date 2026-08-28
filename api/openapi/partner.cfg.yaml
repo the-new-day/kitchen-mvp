@@ -1,5 +1,5 @@
 package: partnerapi
-output: internal/transport/http/partnerapi/partner.gen.go
+output: internal/api/partnerapi/partner.gen.go
 generate:
   models: true
   chi-server: true

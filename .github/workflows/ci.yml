@@ -32,6 +32,11 @@ jobs:
           make generate
           git diff --exit-code
 
+      - name: Mocks are up to date
+        run: |
+          make mocks
+          git diff --exit-code
+
       - name: go.mod is tidy
         run: |
           make tidy

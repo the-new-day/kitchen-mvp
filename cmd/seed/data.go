@@ -34,10 +34,6 @@ type item struct {
 	stockQty    *int
 }
 
-func stock(qty int) *int {
-	return &qty
-}
-
 // venues are the three venues of the closed pilot. The bakery runs its own
 // service: it uploads its menu and opens its shift through the partner API,
 // so neither is seeded here.
@@ -77,9 +73,9 @@ var venues = []venue{
 				name:       "Пицца",
 				position:   10,
 				items: []item{
-					{externalID: "SKU-MARGHERITA", name: "Маргарита", description: "Томаты, моцарелла, базилик.", price: 59_000, stockQty: stock(20)},
-					{externalID: "SKU-PEPPERONI", name: "Пепперони", description: "Острая салями, моцарелла.", price: 69_000, stockQty: stock(15)},
-					{externalID: "SKU-QUATTRO", name: "Четыре сыра", description: "Моцарелла, горгонзола, пармезан, скаморца.", price: 79_000, stockQty: stock(10)},
+					{externalID: "SKU-MARGHERITA", name: "Маргарита", description: "Томаты, моцарелла, базилик.", price: 59_000, stockQty: new(20)},
+					{externalID: "SKU-PEPPERONI", name: "Пепперони", description: "Острая салями, моцарелла.", price: 69_000, stockQty: new(15)},
+					{externalID: "SKU-QUATTRO", name: "Четыре сыра", description: "Моцарелла, горгонзола, пармезан, скаморца.", price: 79_000, stockQty: new(10)},
 				},
 			},
 			{
@@ -87,7 +83,7 @@ var venues = []venue{
 				name:       "Паста",
 				position:   20,
 				items: []item{
-					{externalID: "SKU-CARBONARA", name: "Карбонара", description: "Гуанчале, желток, пекорино.", price: 64_000, stockQty: stock(12)},
+					{externalID: "SKU-CARBONARA", name: "Карбонара", description: "Гуанчале, желток, пекорино.", price: 64_000, stockQty: new(12)},
 					{externalID: "SKU-ARRABBIATA", name: "Арраббьята", description: "Томаты, чеснок, перец чили.", price: 52_000},
 				},
 			},
@@ -122,9 +118,9 @@ var venues = []venue{
 				name:       "Роллы",
 				position:   10,
 				items: []item{
-					{externalID: "SKU-PHILADELPHIA", name: "Филадельфия", description: "Лосось, сливочный сыр, огурец.", price: 89_000, stockQty: stock(8)},
-					{externalID: "SKU-CALIFORNIA", name: "Калифорния", description: "Краб, авокадо, икра тобико.", price: 74_000, stockQty: stock(8)},
-					{externalID: "SKU-UNAGI", name: "Унаги маки", description: "Копчёный угорь, соус унаги.", price: 96_000, stockQty: stock(4)},
+					{externalID: "SKU-PHILADELPHIA", name: "Филадельфия", description: "Лосось, сливочный сыр, огурец.", price: 89_000, stockQty: new(8)},
+					{externalID: "SKU-CALIFORNIA", name: "Калифорния", description: "Краб, авокадо, икра тобико.", price: 74_000, stockQty: new(8)},
+					{externalID: "SKU-UNAGI", name: "Унаги маки", description: "Копчёный угорь, соус унаги.", price: 96_000, stockQty: new(4)},
 				},
 			},
 			{
@@ -132,7 +128,7 @@ var venues = []venue{
 				name:       "Сеты",
 				position:   20,
 				items: []item{
-					{externalID: "SKU-SET-DUO", name: "Сет «Дуэт»", description: "32 кусочка, два вида роллов.", price: 189_000, stockQty: stock(3)},
+					{externalID: "SKU-SET-DUO", name: "Сет «Дуэт»", description: "32 кусочка, два вида роллов.", price: 189_000, stockQty: new(3)},
 				},
 			},
 			{

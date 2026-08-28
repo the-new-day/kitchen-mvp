@@ -1,5 +1,5 @@
 package: venueapi
-output: venue/internal/transport/http/venueapi/venue.gen.go
+output: venue/internal/api/venueapi/venue.gen.go
 generate:
   models: true
   chi-server: true

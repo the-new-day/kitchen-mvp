@@ -1,5 +1,5 @@
 package: kitchenapi
-output: internal/transport/http/kitchenapi/kitchen.gen.go
+output: internal/api/kitchenapi/kitchen.gen.go
 generate:
   models: true
   chi-server: true

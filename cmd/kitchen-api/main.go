@@ -5,6 +5,9 @@ import (
 	"avito-kitchen/internal/config"
 	"avito-kitchen/internal/platform/httpx"
 	"avito-kitchen/internal/platform/logger"
+	"avito-kitchen/internal/repo/postgres"
+	"avito-kitchen/internal/transport/http/kitchen"
+	"avito-kitchen/internal/usecase/catalog"
 	"context"
 	"fmt"
 	"log/slog"
@@ -46,7 +49,16 @@ func run() int {
 }
 
 func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+	db, err := postgres.New(ctx, cfg.Postgres, log)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	catalogService := catalog.New(postgres.NewVenueRepo(db), postgres.NewMenuRepo(db))
+
 	router := httpx.NewRouter(log)
+	kitchen.Mount(router, catalogService, log)
 
 	return httpx.Serve(ctx, cfg.HTTP, router, log)
 }
