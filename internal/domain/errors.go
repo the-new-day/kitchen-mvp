@@ -18,6 +18,10 @@ var (
 	// ErrUnauthenticated reports that the caller did not prove who it is: the
 	// credential is missing, unknown or revoked.
 	ErrUnauthenticated = errors.New("unauthenticated")
+
+	// ErrConflict reports an action that contradicts the current state of the
+	// entity it acts on.
+	ErrConflict = errors.New("conflict")
 )
 
 // InvalidArgumentf returns an ErrInvalidArgument whose message describes the
@@ -33,3 +37,20 @@ type invalidArgument struct {
 func (e invalidArgument) Error() string { return e.message }
 
 func (e invalidArgument) Unwrap() error { return ErrInvalidArgument }
+
+// ConflictError is an ErrConflict carrying the machine-readable code of the
+// error envelope: conflicts of different causes are told apart by it.
+type ConflictError struct {
+	Code    string
+	Message string
+}
+
+// Conflictf returns a ConflictError whose message is safe to show to the
+// client.
+func Conflictf(code, format string, args ...any) error {
+	return ConflictError{Code: code, Message: fmt.Sprintf(format, args...)}
+}
+
+func (e ConflictError) Error() string { return e.Message }
+
+func (e ConflictError) Unwrap() error { return ErrConflict }

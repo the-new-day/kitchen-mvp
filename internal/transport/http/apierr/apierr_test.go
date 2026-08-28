@@ -39,6 +39,13 @@ func TestErrorHandlerResponse(t *testing.T) {
 			wantStatus: http.StatusUnauthorized,
 			wantCode:   "unauthorized",
 		},
+		"conflict keeps its own code": {
+			err: fmt.Errorf("set item: %w",
+				domain.Conflictf("cart_venue_conflict", "cart already holds items of another venue")),
+			wantStatus: http.StatusConflict,
+			wantCode:   "cart_venue_conflict",
+			wantText:   "cart already holds items of another venue",
+		},
 		"operation of a later stage": {
 			err:        apierr.ErrNotImplemented,
 			wantStatus: http.StatusNotImplemented,

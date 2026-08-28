@@ -10,6 +10,11 @@ packages:
     interfaces:
       VenueRepository: {}
       MenuRepository: {}
+  avito-kitchen/internal/usecase/cart:
+    interfaces:
+      Transactor: {}
+      Repository: {}
+      MenuRepository: {}
   avito-kitchen/internal/usecase/partner:
     interfaces:
       VenueRepository: {}

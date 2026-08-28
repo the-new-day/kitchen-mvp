@@ -12,36 +12,6 @@ import (
 // leaves this type as soon as it gets a real handler.
 type notImplemented struct{}
 
-func (notImplemented) GetCart(
-	context.Context, kitchenapi.GetCartRequestObject,
-) (kitchenapi.GetCartResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}
-
-func (notImplemented) ClearCart(
-	context.Context, kitchenapi.ClearCartRequestObject,
-) (kitchenapi.ClearCartResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}
-
-func (notImplemented) PutCartItem(
-	context.Context, kitchenapi.PutCartItemRequestObject,
-) (kitchenapi.PutCartItemResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}
-
-func (notImplemented) DeleteCartItem(
-	context.Context, kitchenapi.DeleteCartItemRequestObject,
-) (kitchenapi.DeleteCartItemResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}
-
-func (notImplemented) ValidateCart(
-	context.Context, kitchenapi.ValidateCartRequestObject,
-) (kitchenapi.ValidateCartResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}
-
 func (notImplemented) ListOrders(
 	context.Context, kitchenapi.ListOrdersRequestObject,
 ) (kitchenapi.ListOrdersResponseObject, error) {

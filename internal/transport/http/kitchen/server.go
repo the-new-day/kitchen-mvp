@@ -6,6 +6,7 @@ package kitchen
 import (
 	"avito-kitchen/internal/api/kitchenapi"
 	"avito-kitchen/internal/transport/http/apierr"
+	cartusecase "avito-kitchen/internal/usecase/cart"
 	catalogusecase "avito-kitchen/internal/usecase/catalog"
 	"log/slog"
 
@@ -21,13 +22,19 @@ type Server struct {
 	notImplemented
 
 	catalog *catalogusecase.Service
+	cart    *cartusecase.Service
 }
 
 var _ kitchenapi.StrictServerInterface = (*Server)(nil)
 
 // Mount registers the customer API on r under /api/v1.
-func Mount(r chi.Router, catalogService *catalogusecase.Service, log *slog.Logger) {
-	server := &Server{catalog: catalogService}
+func Mount(
+	r chi.Router,
+	catalogService *catalogusecase.Service,
+	cartService *cartusecase.Service,
+	log *slog.Logger,
+) {
+	server := &Server{catalog: catalogService, cart: cartService}
 	errs := apierr.Handler{Log: log}
 
 	strict := kitchenapi.NewStrictHandlerWithOptions(server, nil, kitchenapi.StrictHTTPServerOptions{
@@ -38,6 +45,7 @@ func Mount(r chi.Router, catalogService *catalogusecase.Service, log *slog.Logge
 	kitchenapi.HandlerWithOptions(strict, kitchenapi.ChiServerOptions{
 		BaseURL:          basePath,
 		BaseRouter:       r,
+		Middlewares:      []kitchenapi.MiddlewareFunc{withUser},
 		ErrorHandlerFunc: errs.Request,
 	})
 }

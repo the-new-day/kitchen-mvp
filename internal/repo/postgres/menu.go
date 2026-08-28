@@ -4,6 +4,7 @@ import (
 	"avito-kitchen/internal/domain"
 	"avito-kitchen/internal/domain/catalog"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -114,4 +115,37 @@ func assembleMenu(venueID uuid.UUID, rows []menuRow) catalog.Menu {
 	}
 
 	return menu
+}
+
+// MenuItem returns one item of the menu of a venue. An item that does not
+// exist, belongs to another venue or to a venue that is not active is reported
+// as domain.ErrNotFound.
+func (r *MenuRepo) MenuItem(ctx context.Context, venueID, itemID uuid.UUID) (catalog.MenuItem, error) {
+	const query = `
+		SELECT i.id, i.external_id, i.name, i.description, i.price, i.position,
+		       i.is_available, i.stock_qty
+		FROM menu_items i
+		JOIN venues v ON v.id = i.venue_id
+		WHERE i.id = $1 AND i.venue_id = $2 AND v.is_active`
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, itemID, venueID)
+	if err != nil {
+		return catalog.MenuItem{}, fmt.Errorf("query menu item: %w", err)
+	}
+
+	item, err := pgx.CollectExactlyOneRow(rows, func(row pgx.CollectableRow) (catalog.MenuItem, error) {
+		var i catalog.MenuItem
+
+		return i, row.Scan(&i.ID, &i.ExternalID, &i.Name, &i.Description,
+			&i.Price, &i.Position, &i.IsAvailable, &i.StockQty)
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return catalog.MenuItem{}, domain.ErrNotFound
+		}
+
+		return catalog.MenuItem{}, fmt.Errorf("scan menu item: %w", err)
+	}
+
+	return item, nil
 }

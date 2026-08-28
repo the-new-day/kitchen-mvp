@@ -30,6 +30,8 @@ func (h Handler) Request(w http.ResponseWriter, r *http.Request, err error) {
 
 // Response answers a request whose handler failed.
 func (h Handler) Response(w http.ResponseWriter, r *http.Request, err error) {
+	var conflict domain.ConflictError
+
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		httpx.WriteError(w, r, http.StatusNotFound, "not_found", "resource not found")
@@ -38,6 +40,8 @@ func (h Handler) Response(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, domain.ErrUnauthenticated):
 		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized",
 			"api key is missing, unknown or revoked")
+	case errors.As(err, &conflict):
+		httpx.WriteError(w, r, http.StatusConflict, conflict.Code, conflict.Message)
 	case errors.Is(err, ErrNotImplemented):
 		httpx.WriteError(w, r, http.StatusNotImplemented, "not_implemented",
 			"operation is not implemented yet")

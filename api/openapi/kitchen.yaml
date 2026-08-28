@@ -137,6 +137,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Cart"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
     delete:
@@ -146,6 +148,8 @@ paths:
       responses:
         "204":
           description: Корзина очищена
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -201,6 +205,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Cart"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -222,6 +228,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CartValidation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "500":
           $ref: "#/components/responses/InternalError"
 

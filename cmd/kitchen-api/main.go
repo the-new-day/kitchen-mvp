@@ -8,6 +8,7 @@ import (
 	"avito-kitchen/internal/repo/postgres"
 	"avito-kitchen/internal/transport/http/kitchen"
 	"avito-kitchen/internal/transport/http/partner"
+	cartusecase "avito-kitchen/internal/usecase/cart"
 	"avito-kitchen/internal/usecase/catalog"
 	partnerusecase "avito-kitchen/internal/usecase/partner"
 	"context"
@@ -58,12 +59,14 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	defer db.Close()
 
 	venues, menus := postgres.NewVenueRepo(db), postgres.NewMenuRepo(db)
+	carts := postgres.NewCartRepo(db)
 
 	catalogService := catalog.New(venues, menus)
+	cartService := cartusecase.New(db, carts, menus)
 	partnerService := partnerusecase.New(venues, menus)
 
 	router := httpx.NewRouter(log)
-	kitchen.Mount(router, catalogService, log)
+	kitchen.Mount(router, catalogService, cartService, log)
 	partner.Mount(router, partnerService, cfg.Kafka.OrdersTopic, log)
 
 	return httpx.Serve(ctx, cfg.HTTP, router, log)
