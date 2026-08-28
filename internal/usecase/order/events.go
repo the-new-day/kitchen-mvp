@@ -77,3 +77,95 @@ func orderCreated(topic string, placed order.Order) (outbox.Message, error) {
 		Payload:          payload,
 	}, nil
 }
+
+// orderCancelledPayload is the body of the order.cancelled event: the venue is
+// told to stop working on an order it did not stop itself.
+type orderCancelledPayload struct {
+	OrderID     uuid.UUID `json:"order_id"`
+	Number      string    `json:"number"`
+	VenueID     uuid.UUID `json:"venue_id"`
+	Reason      string    `json:"reason,omitempty"`
+	CancelledAt time.Time `json:"cancelled_at"`
+}
+
+// orderCancelled builds the event that takes an order away from a venue. It
+// goes to the topic of the orders and is keyed by the venue, so that a venue
+// never sees an order taken away before it was given.
+func orderCancelled(topic string, cancelled order.Order, reason string) (outbox.Message, error) {
+	payload, err := json.Marshal(orderCancelledPayload{
+		OrderID:     cancelled.ID,
+		Number:      cancelled.Number,
+		VenueID:     cancelled.Venue.ID,
+		Reason:      reason,
+		CancelledAt: cancelled.UpdatedAt,
+	})
+	if err != nil {
+		return outbox.Message{}, fmt.Errorf("marshal cancellation of order %s: %w", cancelled.ID, err)
+	}
+
+	return outbox.Message{
+		Topic:            topic,
+		Key:              cancelled.Venue.ID.String(),
+		EventType:        outbox.EventOrderCancelled,
+		AggregateID:      cancelled.ID,
+		AggregateVersion: cancelled.Version,
+		Payload:          payload,
+	}, nil
+}
+
+// orderStatusChangedPayload is the body of the order.status_changed event: one
+// transition, with the number that orders it among the others of the order.
+type orderStatusChangedPayload struct {
+	OrderID    uuid.UUID    `json:"order_id"`
+	UserID     uuid.UUID    `json:"user_id"`
+	VenueID    uuid.UUID    `json:"venue_id"`
+	FromStatus order.Status `json:"from_status,omitempty"`
+	ToStatus   order.Status `json:"to_status"`
+	Actor      order.Actor  `json:"actor"`
+	Reason     string       `json:"reason,omitempty"`
+	EtaMinutes *int         `json:"eta_minutes,omitempty"`
+	Seq        int64        `json:"seq"`
+	ChangedAt  time.Time    `json:"changed_at"`
+}
+
+// statusChanged builds the event about a transition of an order. It goes to the
+// status topic and is keyed by the order, so that the statuses of one order
+// keep their order.
+func statusChanged(
+	topic string, applied order.Applied, change order.StatusChange,
+) (outbox.Message, error) {
+	moved := applied.Order
+
+	payload, err := json.Marshal(orderStatusChangedPayload{
+		OrderID:    moved.ID,
+		UserID:     moved.UserID,
+		VenueID:    moved.Venue.ID,
+		FromStatus: change.From,
+		ToStatus:   change.To,
+		Actor:      change.Actor,
+		Reason:     change.Reason,
+		EtaMinutes: moved.EtaMinutes,
+		Seq:        applied.Seq,
+		ChangedAt:  moved.UpdatedAt,
+	})
+	if err != nil {
+		return outbox.Message{}, fmt.Errorf("marshal transition of order %s: %w", moved.ID, err)
+	}
+
+	return outbox.Message{
+		Topic:            topic,
+		Key:              moved.ID.String(),
+		EventType:        outbox.EventOrderStatusChanged,
+		AggregateID:      moved.ID,
+		AggregateVersion: moved.Version,
+		Payload:          payload,
+	}, nil
+}
+
+// tellsVenue reports whether a venue has to be told that an order it was given
+// is over. A venue that ended the order itself already knows: it was answered
+// synchronously. One that did not -- the customer cancelled, or the platform
+// gave up waiting -- learns it through the topic it reads its orders from.
+func tellsVenue(change order.StatusChange) bool {
+	return change.To.ReturnsStock() && change.Actor != order.ActorVenue
+}

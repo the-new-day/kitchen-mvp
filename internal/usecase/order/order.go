@@ -25,11 +25,17 @@ type Transactor interface {
 	InTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
-// Repository stores the orders of the customers.
+// Repository stores the orders of the customers. The Lock methods read an
+// order and hold it for the rest of the transaction: a transition is applied to
+// what nobody else can be changing at the same time.
 type Repository interface {
 	Create(ctx context.Context, draft order.Draft) (order.Order, error)
 	Get(ctx context.Context, userID, orderID uuid.UUID) (order.Order, error)
+	GetForVenue(ctx context.Context, venueID, orderID uuid.UUID) (order.Order, error)
 	List(ctx context.Context, filter order.Filter) ([]order.Order, error)
+	LockForCustomer(ctx context.Context, userID, orderID uuid.UUID) (order.Order, error)
+	LockForVenue(ctx context.Context, venueID, orderID uuid.UUID) (order.Order, error)
+	ApplyStatus(ctx context.Context, orderID uuid.UUID, change order.StatusChange) (order.Applied, error)
 }
 
 // CartRepository reads and empties the cart an order is placed out of.
@@ -42,6 +48,7 @@ type CartRepository interface {
 // MenuRepository holds the stock the ordered items are taken from.
 type MenuRepository interface {
 	ReserveStock(ctx context.Context, venueID uuid.UUID, items []order.Item) ([]uuid.UUID, error)
+	ReleaseStock(ctx context.Context, venueID uuid.UUID, items []order.Item) error
 }
 
 // OutboxRepository stores the events waiting to be published.
@@ -49,33 +56,40 @@ type OutboxRepository interface {
 	Append(ctx context.Context, message outbox.Message) error
 }
 
+// Topics are the topics the events of an order go to: Orders is read by the
+// venue the order was placed at, Status by whoever follows the order.
+type Topics struct {
+	Orders string
+	Status string
+}
+
 // Service is the order use case.
 type Service struct {
-	tx          Transactor
-	orders      Repository
-	carts       CartRepository
-	menus       MenuRepository
-	outbox      OutboxRepository
-	ordersTopic string
+	tx     Transactor
+	orders Repository
+	carts  CartRepository
+	menus  MenuRepository
+	outbox OutboxRepository
+	topics Topics
 }
 
 // New returns a service working through the given repositories and publishing
-// its orders to ordersTopic.
+// its events to the given topics.
 func New(
 	tx Transactor,
 	orders Repository,
 	carts CartRepository,
 	menus MenuRepository,
 	messages OutboxRepository,
-	ordersTopic string,
+	topics Topics,
 ) *Service {
 	return &Service{
-		tx:          tx,
-		orders:      orders,
-		carts:       carts,
-		menus:       menus,
-		outbox:      messages,
-		ordersTopic: ordersTopic,
+		tx:     tx,
+		orders: orders,
+		carts:  carts,
+		menus:  menus,
+		outbox: messages,
+		topics: topics,
 	}
 }
 
@@ -103,7 +117,7 @@ func (s *Service) Create(
 			return fmt.Errorf("create order of user %s: %w", userID, err)
 		}
 
-		message, err := orderCreated(s.ordersTopic, created)
+		message, err := orderCreated(s.topics.Orders, created)
 		if err != nil {
 			return err
 		}
@@ -178,6 +192,17 @@ func (s *Service) Order(ctx context.Context, userID, orderID uuid.UUID) (order.O
 	found, err := s.orders.Get(ctx, userID, orderID)
 	if err != nil {
 		return order.Order{}, fmt.Errorf("get order %s of user %s: %w", orderID, userID, err)
+	}
+
+	return found, nil
+}
+
+// VenueOrder returns one order placed at a venue. An order of another venue is
+// reported as domain.ErrNotFound.
+func (s *Service) VenueOrder(ctx context.Context, venueID, orderID uuid.UUID) (order.Order, error) {
+	found, err := s.orders.GetForVenue(ctx, venueID, orderID)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("get order %s of venue %s: %w", orderID, venueID, err)
 	}
 
 	return found, nil

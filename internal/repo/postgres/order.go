@@ -132,11 +132,24 @@ func (r *OrderRepo) appendHistory(
 // Get returns one order of a customer. An order that does not exist and an
 // order of somebody else are both reported as domain.ErrNotFound.
 func (r *OrderRepo) Get(ctx context.Context, userID, orderID uuid.UUID) (order.Order, error) {
+	return r.get(ctx, "o.user_id", userID, orderID)
+}
+
+// GetForVenue returns one order placed at a venue. An order of another venue is
+// reported as domain.ErrNotFound.
+func (r *OrderRepo) GetForVenue(ctx context.Context, venueID, orderID uuid.UUID) (order.Order, error) {
+	return r.get(ctx, "o.venue_id", venueID, orderID)
+}
+
+// get returns one order visible to the owner it is looked up by.
+func (r *OrderRepo) get(
+	ctx context.Context, ownerColumn string, ownerID, orderID uuid.UUID,
+) (order.Order, error) {
 	query := fmt.Sprintf(`
 		SELECT %s FROM orders o JOIN venues v ON v.id = o.venue_id
-		WHERE o.id = $1 AND o.user_id = $2`, orderColumns)
+		WHERE o.id = $1 AND %s = $2`, orderColumns, ownerColumn)
 
-	rows, err := r.db.conn(ctx).Query(ctx, query, orderID, userID)
+	rows, err := r.db.conn(ctx).Query(ctx, query, orderID, ownerID)
 	if err != nil {
 		return order.Order{}, fmt.Errorf("query order: %w", err)
 	}
@@ -294,4 +307,141 @@ func scanOrderItem(row pgx.CollectableRow) (orderItem, error) {
 	}
 
 	return p, err
+}
+
+// LockForCustomer reads an order of a customer and holds it until the end of
+// the transaction, so that only one transition is applied to it at a time. An
+// order of somebody else is reported as domain.ErrNotFound.
+func (r *OrderRepo) LockForCustomer(
+	ctx context.Context, userID, orderID uuid.UUID,
+) (order.Order, error) {
+	return r.lock(ctx, "o.user_id", userID, orderID)
+}
+
+// LockForVenue reads an order placed at a venue and holds it until the end of
+// the transaction. An order of another venue is reported as domain.ErrNotFound.
+func (r *OrderRepo) LockForVenue(
+	ctx context.Context, venueID, orderID uuid.UUID,
+) (order.Order, error) {
+	return r.lock(ctx, "o.venue_id", venueID, orderID)
+}
+
+// lock reads one order under a row lock. Only the order itself is locked: the
+// venue is joined to complete the card and must stay free.
+func (r *OrderRepo) lock(
+	ctx context.Context, ownerColumn string, ownerID, orderID uuid.UUID,
+) (order.Order, error) {
+	query := fmt.Sprintf(`
+		SELECT %s FROM orders o JOIN venues v ON v.id = o.venue_id
+		WHERE o.id = $1 AND %s = $2
+		FOR UPDATE OF o`, orderColumns, ownerColumn)
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, orderID, ownerID)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("query order for update: %w", err)
+	}
+
+	locked, err := pgx.CollectExactlyOneRow(rows, scanOrder)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return order.Order{}, domain.ErrNotFound
+		}
+
+		return order.Order{}, fmt.Errorf("scan order for update: %w", err)
+	}
+
+	page := []order.Order{locked}
+	if err := r.attachItems(ctx, page); err != nil {
+		return order.Order{}, err
+	}
+
+	return page[0], nil
+}
+
+// ApplyStatus moves an order to the status of the change and records the move
+// in its status history. The caller is expected to hold the order locked.
+func (r *OrderRepo) ApplyStatus(
+	ctx context.Context, orderID uuid.UUID, change order.StatusChange,
+) (order.Applied, error) {
+	moved, err := r.updateStatus(ctx, orderID, change)
+	if err != nil {
+		return order.Applied{}, err
+	}
+
+	seq, err := r.recordChange(ctx, orderID, change)
+	if err != nil {
+		return order.Applied{}, err
+	}
+
+	return order.Applied{Order: moved, Seq: seq}, nil
+}
+
+// updateStatus writes the new status and bumps the version. The estimate is
+// only written when the transition brings one, and the reason only when the
+// venue refused the order: what a customer wrote when cancelling is theirs and
+// stays in the status history.
+func (r *OrderRepo) updateStatus(
+	ctx context.Context, orderID uuid.UUID, change order.StatusChange,
+) (order.Order, error) {
+	query := fmt.Sprintf(`
+		WITH updated AS (
+			UPDATE orders SET
+				status = $2,
+				eta_minutes = COALESCE($3, eta_minutes),
+				rejection_reason = COALESCE($4, rejection_reason),
+				version = version + 1,
+				updated_at = now()
+			WHERE id = $1
+			RETURNING *
+		)
+		SELECT %s FROM updated o JOIN venues v ON v.id = o.venue_id`, orderColumns)
+
+	var reason *string
+	if change.Reason != "" && change.To == order.StatusRejected {
+		reason = &change.Reason
+	}
+
+	rows, err := r.db.conn(ctx).Query(ctx, query,
+		orderID, change.To, change.EtaMinutes, reason)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("update order status: %w", err)
+	}
+
+	moved, err := pgx.CollectExactlyOneRow(rows, scanOrder)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("scan updated order: %w", err)
+	}
+
+	page := []order.Order{moved}
+	if err := r.attachItems(ctx, page); err != nil {
+		return order.Order{}, err
+	}
+
+	return page[0], nil
+}
+
+// recordChange appends the transition to the status history and returns the
+// number of the entry.
+func (r *OrderRepo) recordChange(
+	ctx context.Context, orderID uuid.UUID, change order.StatusChange,
+) (int64, error) {
+	const query = `
+		INSERT INTO order_status_history (order_id, from_status, to_status, actor, reason)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`
+
+	var reason *string
+	if change.Reason != "" {
+		reason = &change.Reason
+	}
+
+	var seq int64
+
+	err := r.db.conn(ctx).QueryRow(ctx, query,
+		orderID, change.From, change.To, change.Actor, reason).Scan(&seq)
+	if err != nil {
+		return 0, fmt.Errorf("insert order status history: %w", err)
+	}
+
+	return seq, nil
 }

@@ -34,9 +34,18 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 // WriteError sends an ErrorBody with the given status, tagged with the trace
 // id of the request.
 func WriteError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	WriteErrorDetails(w, r, status, code, message, nil)
+}
+
+// WriteErrorDetails sends an ErrorBody carrying what the client needs to act on
+// the error: the status an entity is really in, the field that failed.
+func WriteErrorDetails(
+	w http.ResponseWriter, r *http.Request, status int, code, message string, details any,
+) {
 	WriteJSON(w, status, ErrorBody{
 		Code:    code,
 		Message: message,
+		Details: details,
 		TraceID: middleware.GetReqID(r.Context()),
 	})
 }

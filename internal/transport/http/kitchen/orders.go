@@ -140,3 +140,27 @@ func toOrder(o order.Order) kitchenapi.Order {
 
 	return response
 }
+
+// CancelOrder serves POST /orders/{order_id}/cancel. Cancelling an order that
+// is already cancelled answers 200: the transition is the state it asks for,
+// not a step to take.
+func (s *Server) CancelOrder(
+	ctx context.Context, request kitchenapi.CancelOrderRequestObject,
+) (kitchenapi.CancelOrderResponseObject, error) {
+	userID, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var reason string
+	if request.Body != nil && request.Body.Reason != nil {
+		reason = *request.Body.Reason
+	}
+
+	cancelled, err := s.order.Cancel(ctx, userID, request.OrderId, reason)
+	if err != nil {
+		return nil, err
+	}
+
+	return kitchenapi.CancelOrder200JSONResponse(toOrder(cancelled)), nil
+}

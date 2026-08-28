@@ -17,10 +17,11 @@ func TestErrorHandlerResponse(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		err        error
-		wantStatus int
-		wantCode   string
-		wantText   string
+		err         error
+		wantStatus  int
+		wantCode    string
+		wantText    string
+		wantCurrent string
 	}{
 		"unknown venue": {
 			err:        fmt.Errorf("get venue: %w", domain.ErrNotFound),
@@ -57,6 +58,13 @@ func TestErrorHandlerResponse(t *testing.T) {
 			err:        fmt.Errorf("accept order: %w", domain.ErrInvalidTransition),
 			wantStatus: http.StatusConflict,
 			wantCode:   "invalid_transition",
+		},
+		"a forbidden transition reports the status the order is in": {
+			err: fmt.Errorf("hand over order: %w",
+				domain.InvalidTransition("ACCEPTED")),
+			wantStatus:  http.StatusConflict,
+			wantCode:    "invalid_transition",
+			wantCurrent: "ACCEPTED",
 		},
 		"operation of a later stage": {
 			err:        apierr.ErrNotImplemented,
@@ -96,6 +104,15 @@ func TestErrorHandlerResponse(t *testing.T) {
 			}
 			if tc.wantText != "" && body.Message != tc.wantText {
 				t.Errorf("message = %q, want %q", body.Message, tc.wantText)
+			}
+
+			if tc.wantCurrent == "" {
+				return
+			}
+
+			details, ok := body.Details.(map[string]any)
+			if !ok || details["current_status"] != tc.wantCurrent {
+				t.Errorf("details = %v, want current_status %q", body.Details, tc.wantCurrent)
 			}
 		})
 	}

@@ -66,7 +66,10 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	services := kitchen.Services{
 		Catalog: catalog.New(venues, menus),
 		Cart:    cartusecase.New(db, carts, menus),
-		Order:   orderusecase.New(db, orders, carts, menus, messages, cfg.Kafka.OrdersTopic),
+		Order: orderusecase.New(db, orders, carts, menus, messages, orderusecase.Topics{
+			Orders: cfg.Kafka.OrdersTopic,
+			Status: cfg.Kafka.StatusTopic,
+		}),
 	}
 	partnerService := partnerusecase.New(venues, menus)
 
@@ -77,7 +80,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 
-	partner.Mount(router, partnerService, cfg.Kafka.OrdersTopic, log)
+	partner.Mount(router, partnerService, services.Order, cfg.Kafka.OrdersTopic, log)
 
 	return httpx.Serve(ctx, cfg.HTTP, router, log)
 }

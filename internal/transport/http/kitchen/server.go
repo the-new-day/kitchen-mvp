@@ -19,11 +19,8 @@ import (
 // basePath is the server prefix declared in the specification.
 const basePath = "/api/v1"
 
-// Server implements the operations of the customer API. The operations that
-// belong to a part of the service not built yet come from notImplemented.
+// Server implements the operations of the customer API.
 type Server struct {
-	notImplemented
-
 	catalog *catalogusecase.Service
 	cart    *cartusecase.Service
 	order   *orderusecase.Service

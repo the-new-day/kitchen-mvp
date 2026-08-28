@@ -6,6 +6,7 @@ package partner
 import (
 	"avito-kitchen/internal/api/partnerapi"
 	"avito-kitchen/internal/transport/http/apierr"
+	orderusecase "avito-kitchen/internal/usecase/order"
 	partnerusecase "avito-kitchen/internal/usecase/partner"
 	"log/slog"
 
@@ -21,6 +22,7 @@ type Server struct {
 	notImplemented
 
 	partner     *partnerusecase.Service
+	orders      *orderusecase.Service
 	ordersTopic string
 }
 
@@ -29,8 +31,14 @@ var _ partnerapi.StrictServerInterface = (*Server)(nil)
 // Mount registers the partner API on r under /api/v1.
 // Authentication is mounted with the operations of the specification,
 // so it guards them and only them.
-func Mount(r chi.Router, service *partnerusecase.Service, ordersTopic string, log *slog.Logger) {
-	server := &Server{partner: service, ordersTopic: ordersTopic}
+func Mount(
+	r chi.Router,
+	service *partnerusecase.Service,
+	orders *orderusecase.Service,
+	ordersTopic string,
+	log *slog.Logger,
+) {
+	server := &Server{partner: service, orders: orders, ordersTopic: ordersTopic}
 	errs := apierr.Handler{Log: log}
 
 	strict := partnerapi.NewStrictHandlerWithOptions(server, nil, partnerapi.StrictHTTPServerOptions{

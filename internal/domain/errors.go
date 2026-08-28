@@ -79,3 +79,21 @@ func Unprocessablef(code, format string, args ...any) error {
 func (e UnprocessableError) Error() string { return e.Message }
 
 func (e UnprocessableError) Unwrap() error { return ErrUnprocessable }
+
+// TransitionError is an ErrInvalidTransition that reports the status the entity
+// is actually in, so that the caller learns it without asking again.
+type TransitionError struct {
+	Current string
+}
+
+// InvalidTransition returns a TransitionError for an entity in the given
+// status.
+func InvalidTransition(current string) error {
+	return TransitionError{Current: current}
+}
+
+func (e TransitionError) Error() string {
+	return fmt.Sprintf("invalid transition from %s", e.Current)
+}
+
+func (e TransitionError) Unwrap() error { return ErrInvalidTransition }

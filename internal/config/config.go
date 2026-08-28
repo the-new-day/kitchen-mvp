@@ -39,9 +39,11 @@ type Postgres struct {
 }
 
 // Kafka names the topics of the platform. The topic a venue reads its orders
-// from is part of what it is told at onboarding.
+// from is part of what it is told at onboarding; the status topic is read by
+// the platform itself.
 type Kafka struct {
 	OrdersTopic string `env:"ORDERS_TOPIC" envDefault:"kitchen.orders.v1"`
+	StatusTopic string `env:"STATUS_TOPIC" envDefault:"kitchen.order-status.v1"`
 }
 
 // Orders configures the placing of orders.

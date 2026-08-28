@@ -39,6 +39,78 @@ func (_m *MockRepository) EXPECT() *MockRepository_Expecter {
 	return &MockRepository_Expecter{mock: &_m.Mock}
 }
 
+// ApplyStatus provides a mock function for the type MockRepository
+func (_mock *MockRepository) ApplyStatus(ctx context.Context, orderID uuid.UUID, change order.StatusChange) (order.Applied, error) {
+	ret := _mock.Called(ctx, orderID, change)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ApplyStatus")
+	}
+
+	var r0 order.Applied
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, order.StatusChange) (order.Applied, error)); ok {
+		return returnFunc(ctx, orderID, change)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, order.StatusChange) order.Applied); ok {
+		r0 = returnFunc(ctx, orderID, change)
+	} else {
+		r0 = ret.Get(0).(order.Applied)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, order.StatusChange) error); ok {
+		r1 = returnFunc(ctx, orderID, change)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_ApplyStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ApplyStatus'
+type MockRepository_ApplyStatus_Call struct {
+	*mock.Call
+}
+
+// ApplyStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orderID uuid.UUID
+//   - change order.StatusChange
+func (_e *MockRepository_Expecter) ApplyStatus(ctx any, orderID any, change any) *MockRepository_ApplyStatus_Call {
+	return &MockRepository_ApplyStatus_Call{Call: _e.mock.On("ApplyStatus", ctx, orderID, change)}
+}
+
+func (_c *MockRepository_ApplyStatus_Call) Run(run func(ctx context.Context, orderID uuid.UUID, change order.StatusChange)) *MockRepository_ApplyStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 order.StatusChange
+		if args[2] != nil {
+			arg2 = args[2].(order.StatusChange)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_ApplyStatus_Call) Return(applied order.Applied, err error) *MockRepository_ApplyStatus_Call {
+	_c.Call.Return(applied, err)
+	return _c
+}
+
+func (_c *MockRepository_ApplyStatus_Call) RunAndReturn(run func(ctx context.Context, orderID uuid.UUID, change order.StatusChange) (order.Applied, error)) *MockRepository_ApplyStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Create provides a mock function for the type MockRepository
 func (_mock *MockRepository) Create(ctx context.Context, draft order.Draft) (order.Order, error) {
 	ret := _mock.Called(ctx, draft)
@@ -177,6 +249,78 @@ func (_c *MockRepository_Get_Call) RunAndReturn(run func(ctx context.Context, us
 	return _c
 }
 
+// GetForVenue provides a mock function for the type MockRepository
+func (_mock *MockRepository) GetForVenue(ctx context.Context, venueID uuid.UUID, orderID uuid.UUID) (order.Order, error) {
+	ret := _mock.Called(ctx, venueID, orderID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetForVenue")
+	}
+
+	var r0 order.Order
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) (order.Order, error)); ok {
+		return returnFunc(ctx, venueID, orderID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) order.Order); ok {
+		r0 = returnFunc(ctx, venueID, orderID)
+	} else {
+		r0 = ret.Get(0).(order.Order)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, venueID, orderID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_GetForVenue_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetForVenue'
+type MockRepository_GetForVenue_Call struct {
+	*mock.Call
+}
+
+// GetForVenue is a helper method to define mock.On call
+//   - ctx context.Context
+//   - venueID uuid.UUID
+//   - orderID uuid.UUID
+func (_e *MockRepository_Expecter) GetForVenue(ctx any, venueID any, orderID any) *MockRepository_GetForVenue_Call {
+	return &MockRepository_GetForVenue_Call{Call: _e.mock.On("GetForVenue", ctx, venueID, orderID)}
+}
+
+func (_c *MockRepository_GetForVenue_Call) Run(run func(ctx context.Context, venueID uuid.UUID, orderID uuid.UUID)) *MockRepository_GetForVenue_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 uuid.UUID
+		if args[2] != nil {
+			arg2 = args[2].(uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_GetForVenue_Call) Return(order1 order.Order, err error) *MockRepository_GetForVenue_Call {
+	_c.Call.Return(order1, err)
+	return _c
+}
+
+func (_c *MockRepository_GetForVenue_Call) RunAndReturn(run func(ctx context.Context, venueID uuid.UUID, orderID uuid.UUID) (order.Order, error)) *MockRepository_GetForVenue_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // List provides a mock function for the type MockRepository
 func (_mock *MockRepository) List(ctx context.Context, filter order.Filter) ([]order.Order, error) {
 	ret := _mock.Called(ctx, filter)
@@ -241,6 +385,150 @@ func (_c *MockRepository_List_Call) Return(orders []order.Order, err error) *Moc
 }
 
 func (_c *MockRepository_List_Call) RunAndReturn(run func(ctx context.Context, filter order.Filter) ([]order.Order, error)) *MockRepository_List_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// LockForCustomer provides a mock function for the type MockRepository
+func (_mock *MockRepository) LockForCustomer(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (order.Order, error) {
+	ret := _mock.Called(ctx, userID, orderID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LockForCustomer")
+	}
+
+	var r0 order.Order
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) (order.Order, error)); ok {
+		return returnFunc(ctx, userID, orderID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) order.Order); ok {
+		r0 = returnFunc(ctx, userID, orderID)
+	} else {
+		r0 = ret.Get(0).(order.Order)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, userID, orderID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_LockForCustomer_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LockForCustomer'
+type MockRepository_LockForCustomer_Call struct {
+	*mock.Call
+}
+
+// LockForCustomer is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID uuid.UUID
+//   - orderID uuid.UUID
+func (_e *MockRepository_Expecter) LockForCustomer(ctx any, userID any, orderID any) *MockRepository_LockForCustomer_Call {
+	return &MockRepository_LockForCustomer_Call{Call: _e.mock.On("LockForCustomer", ctx, userID, orderID)}
+}
+
+func (_c *MockRepository_LockForCustomer_Call) Run(run func(ctx context.Context, userID uuid.UUID, orderID uuid.UUID)) *MockRepository_LockForCustomer_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 uuid.UUID
+		if args[2] != nil {
+			arg2 = args[2].(uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_LockForCustomer_Call) Return(order1 order.Order, err error) *MockRepository_LockForCustomer_Call {
+	_c.Call.Return(order1, err)
+	return _c
+}
+
+func (_c *MockRepository_LockForCustomer_Call) RunAndReturn(run func(ctx context.Context, userID uuid.UUID, orderID uuid.UUID) (order.Order, error)) *MockRepository_LockForCustomer_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// LockForVenue provides a mock function for the type MockRepository
+func (_mock *MockRepository) LockForVenue(ctx context.Context, venueID uuid.UUID, orderID uuid.UUID) (order.Order, error) {
+	ret := _mock.Called(ctx, venueID, orderID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LockForVenue")
+	}
+
+	var r0 order.Order
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) (order.Order, error)); ok {
+		return returnFunc(ctx, venueID, orderID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, uuid.UUID) order.Order); ok {
+		r0 = returnFunc(ctx, venueID, orderID)
+	} else {
+		r0 = ret.Get(0).(order.Order)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, venueID, orderID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_LockForVenue_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LockForVenue'
+type MockRepository_LockForVenue_Call struct {
+	*mock.Call
+}
+
+// LockForVenue is a helper method to define mock.On call
+//   - ctx context.Context
+//   - venueID uuid.UUID
+//   - orderID uuid.UUID
+func (_e *MockRepository_Expecter) LockForVenue(ctx any, venueID any, orderID any) *MockRepository_LockForVenue_Call {
+	return &MockRepository_LockForVenue_Call{Call: _e.mock.On("LockForVenue", ctx, venueID, orderID)}
+}
+
+func (_c *MockRepository_LockForVenue_Call) Run(run func(ctx context.Context, venueID uuid.UUID, orderID uuid.UUID)) *MockRepository_LockForVenue_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 uuid.UUID
+		if args[2] != nil {
+			arg2 = args[2].(uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_LockForVenue_Call) Return(order1 order.Order, err error) *MockRepository_LockForVenue_Call {
+	_c.Call.Return(order1, err)
+	return _c
+}
+
+func (_c *MockRepository_LockForVenue_Call) RunAndReturn(run func(ctx context.Context, venueID uuid.UUID, orderID uuid.UUID) (order.Order, error)) *MockRepository_LockForVenue_Call {
 	_c.Call.Return(run)
 	return _c
 }

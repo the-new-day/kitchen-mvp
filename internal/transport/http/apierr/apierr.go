@@ -33,6 +33,7 @@ func (h Handler) Response(w http.ResponseWriter, r *http.Request, err error) {
 	var (
 		conflict      domain.ConflictError
 		unprocessable domain.UnprocessableError
+		transition    domain.TransitionError
 	)
 
 	switch {
@@ -43,6 +44,10 @@ func (h Handler) Response(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, domain.ErrUnauthenticated):
 		httpx.WriteError(w, r, http.StatusUnauthorized, "unauthorized",
 			"api key is missing, unknown or revoked")
+	case errors.As(err, &transition):
+		httpx.WriteErrorDetails(w, r, http.StatusConflict, "invalid_transition",
+			"order cannot go there from the status it is in",
+			map[string]string{"current_status": transition.Current})
 	case errors.Is(err, domain.ErrInvalidTransition):
 		httpx.WriteError(w, r, http.StatusConflict, "invalid_transition",
 			"order cannot go there from the status it is in")

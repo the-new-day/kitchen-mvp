@@ -210,3 +210,42 @@ func (r *MenuRepo) ReserveStock(
 
 	return missed, nil
 }
+
+// ReleaseStock gives the quantities of an order back to the stock of a venue.
+// An item the venue keeps no count of is left alone, and so is an item that has
+// since been deleted from the menu: the order keeps its own snapshot of it.
+func (r *MenuRepo) ReleaseStock(
+	ctx context.Context, venueID uuid.UUID, items []order.Item,
+) error {
+	ids := make([]uuid.UUID, 0, len(items))
+	quantities := make([]int, 0, len(items))
+
+	for _, item := range items {
+		if item.MenuItemID == uuid.Nil {
+			continue
+		}
+
+		ids = append(ids, item.MenuItemID)
+		quantities = append(quantities, item.Qty)
+	}
+
+	if len(ids) == 0 {
+		return nil
+	}
+
+	const query = `
+		WITH returned AS (
+			SELECT * FROM unnest($2::uuid[], $3::integer[]) AS r(item_id, qty)
+			ORDER BY item_id
+		)
+		UPDATE menu_items i
+		SET stock_qty = i.stock_qty + r.qty, updated_at = now()
+		FROM returned r
+		WHERE i.id = r.item_id AND i.venue_id = $1 AND i.stock_qty IS NOT NULL`
+
+	if _, err := r.db.conn(ctx).Exec(ctx, query, venueID, ids, quantities); err != nil {
+		return fmt.Errorf("release stock: %w", err)
+	}
+
+	return nil
+}

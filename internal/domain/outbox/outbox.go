@@ -6,8 +6,19 @@ package outbox
 
 import "github.com/google/uuid"
 
-// EventOrderCreated is published when a customer has placed an order.
-const EventOrderCreated = "order.created"
+// Event types the platform publishes.
+const (
+	// EventOrderCreated is published when a customer has placed an order.
+	EventOrderCreated = "order.created"
+
+	// EventOrderCancelled tells a venue to stop working on an order that was
+	// stopped without the venue itself doing it.
+	EventOrderCancelled = "order.cancelled"
+
+	// EventOrderStatusChanged carries every transition of an order to whoever
+	// follows it.
+	EventOrderStatusChanged = "order.status_changed"
+)
 
 // Message is one event waiting to be published. Key is the partition key of
 // the topic, AggregateVersion the version of the aggregate after the change,

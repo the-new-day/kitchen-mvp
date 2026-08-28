@@ -17,39 +17,3 @@ func (notImplemented) ListPartnerOrders(
 ) (partnerapi.ListPartnerOrdersResponseObject, error) {
 	return nil, apierr.ErrNotImplemented
 }
-
-func (notImplemented) GetPartnerOrder(
-	context.Context, partnerapi.GetPartnerOrderRequestObject,
-) (partnerapi.GetPartnerOrderResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}
-
-func (notImplemented) AcceptOrder(
-	context.Context, partnerapi.AcceptOrderRequestObject,
-) (partnerapi.AcceptOrderResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}
-
-func (notImplemented) RejectOrder(
-	context.Context, partnerapi.RejectOrderRequestObject,
-) (partnerapi.RejectOrderResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}
-
-func (notImplemented) StartCooking(
-	context.Context, partnerapi.StartCookingRequestObject,
-) (partnerapi.StartCookingResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}
-
-func (notImplemented) MarkReady(
-	context.Context, partnerapi.MarkReadyRequestObject,
-) (partnerapi.MarkReadyResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}
-
-func (notImplemented) HandoverOrder(
-	context.Context, partnerapi.HandoverOrderRequestObject,
-) (partnerapi.HandoverOrderResponseObject, error) {
-	return nil, apierr.ErrNotImplemented
-}

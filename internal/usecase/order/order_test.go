@@ -18,7 +18,10 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-const ordersTopic = "kitchen.orders.v1"
+const (
+	ordersTopic = "kitchen.orders.v1"
+	statusTopic = "kitchen.order-status.v1"
+)
 
 var (
 	userID      = uuid.MustParse("0192f4c1-0000-7000-8000-0000000000a1")
@@ -100,7 +103,8 @@ func newService(t *testing.T, setup func(repositories)) *order.Service {
 			return fn(ctx)
 		}).Maybe()
 
-	return order.New(tx, repos.orders, repos.carts, repos.menus, repos.messages, ordersTopic)
+	return order.New(tx, repos.orders, repos.carts, repos.menus, repos.messages,
+		order.Topics{Orders: ordersTopic, Status: statusTopic})
 }
 
 // readCart is the part every attempt at placing an order begins with.

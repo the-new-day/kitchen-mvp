@@ -39,6 +39,69 @@ func (_m *MockMenuRepository) EXPECT() *MockMenuRepository_Expecter {
 	return &MockMenuRepository_Expecter{mock: &_m.Mock}
 }
 
+// ReleaseStock provides a mock function for the type MockMenuRepository
+func (_mock *MockMenuRepository) ReleaseStock(ctx context.Context, venueID uuid.UUID, items []order.Item) error {
+	ret := _mock.Called(ctx, venueID, items)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReleaseStock")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, []order.Item) error); ok {
+		r0 = returnFunc(ctx, venueID, items)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockMenuRepository_ReleaseStock_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReleaseStock'
+type MockMenuRepository_ReleaseStock_Call struct {
+	*mock.Call
+}
+
+// ReleaseStock is a helper method to define mock.On call
+//   - ctx context.Context
+//   - venueID uuid.UUID
+//   - items []order.Item
+func (_e *MockMenuRepository_Expecter) ReleaseStock(ctx any, venueID any, items any) *MockMenuRepository_ReleaseStock_Call {
+	return &MockMenuRepository_ReleaseStock_Call{Call: _e.mock.On("ReleaseStock", ctx, venueID, items)}
+}
+
+func (_c *MockMenuRepository_ReleaseStock_Call) Run(run func(ctx context.Context, venueID uuid.UUID, items []order.Item)) *MockMenuRepository_ReleaseStock_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		var arg2 []order.Item
+		if args[2] != nil {
+			arg2 = args[2].([]order.Item)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMenuRepository_ReleaseStock_Call) Return(err error) *MockMenuRepository_ReleaseStock_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockMenuRepository_ReleaseStock_Call) RunAndReturn(run func(ctx context.Context, venueID uuid.UUID, items []order.Item) error) *MockMenuRepository_ReleaseStock_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ReserveStock provides a mock function for the type MockMenuRepository
 func (_mock *MockMenuRepository) ReserveStock(ctx context.Context, venueID uuid.UUID, items []order.Item) ([]uuid.UUID, error) {
 	ret := _mock.Called(ctx, venueID, items)
