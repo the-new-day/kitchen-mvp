@@ -7,6 +7,7 @@ package mocks
 import (
 	"avito-kitchen/internal/domain/order"
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	mock "github.com/stretchr/testify/mock"
@@ -529,6 +530,146 @@ func (_c *MockRepository_LockForVenue_Call) Return(order1 order.Order, err error
 }
 
 func (_c *MockRepository_LockForVenue_Call) RunAndReturn(run func(ctx context.Context, venueID uuid.UUID, orderID uuid.UUID) (order.Order, error)) *MockRepository_LockForVenue_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// LockUnaccepted provides a mock function for the type MockRepository
+func (_mock *MockRepository) LockUnaccepted(ctx context.Context, orderID uuid.UUID) (order.Order, error) {
+	ret := _mock.Called(ctx, orderID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for LockUnaccepted")
+	}
+
+	var r0 order.Order
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) (order.Order, error)); ok {
+		return returnFunc(ctx, orderID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID) order.Order); ok {
+		r0 = returnFunc(ctx, orderID)
+	} else {
+		r0 = ret.Get(0).(order.Order)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, uuid.UUID) error); ok {
+		r1 = returnFunc(ctx, orderID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_LockUnaccepted_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LockUnaccepted'
+type MockRepository_LockUnaccepted_Call struct {
+	*mock.Call
+}
+
+// LockUnaccepted is a helper method to define mock.On call
+//   - ctx context.Context
+//   - orderID uuid.UUID
+func (_e *MockRepository_Expecter) LockUnaccepted(ctx any, orderID any) *MockRepository_LockUnaccepted_Call {
+	return &MockRepository_LockUnaccepted_Call{Call: _e.mock.On("LockUnaccepted", ctx, orderID)}
+}
+
+func (_c *MockRepository_LockUnaccepted_Call) Run(run func(ctx context.Context, orderID uuid.UUID)) *MockRepository_LockUnaccepted_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 uuid.UUID
+		if args[1] != nil {
+			arg1 = args[1].(uuid.UUID)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_LockUnaccepted_Call) Return(order1 order.Order, err error) *MockRepository_LockUnaccepted_Call {
+	_c.Call.Return(order1, err)
+	return _c
+}
+
+func (_c *MockRepository_LockUnaccepted_Call) RunAndReturn(run func(ctx context.Context, orderID uuid.UUID) (order.Order, error)) *MockRepository_LockUnaccepted_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// StaleUnaccepted provides a mock function for the type MockRepository
+func (_mock *MockRepository) StaleUnaccepted(ctx context.Context, before time.Time, limit int) ([]uuid.UUID, error) {
+	ret := _mock.Called(ctx, before, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for StaleUnaccepted")
+	}
+
+	var r0 []uuid.UUID
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int) ([]uuid.UUID, error)); ok {
+		return returnFunc(ctx, before, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int) []uuid.UUID); ok {
+		r0 = returnFunc(ctx, before, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]uuid.UUID)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, time.Time, int) error); ok {
+		r1 = returnFunc(ctx, before, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_StaleUnaccepted_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'StaleUnaccepted'
+type MockRepository_StaleUnaccepted_Call struct {
+	*mock.Call
+}
+
+// StaleUnaccepted is a helper method to define mock.On call
+//   - ctx context.Context
+//   - before time.Time
+//   - limit int
+func (_e *MockRepository_Expecter) StaleUnaccepted(ctx any, before any, limit any) *MockRepository_StaleUnaccepted_Call {
+	return &MockRepository_StaleUnaccepted_Call{Call: _e.mock.On("StaleUnaccepted", ctx, before, limit)}
+}
+
+func (_c *MockRepository_StaleUnaccepted_Call) Run(run func(ctx context.Context, before time.Time, limit int)) *MockRepository_StaleUnaccepted_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 time.Time
+		if args[1] != nil {
+			arg1 = args[1].(time.Time)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_StaleUnaccepted_Call) Return(uUIDs []uuid.UUID, err error) *MockRepository_StaleUnaccepted_Call {
+	_c.Call.Return(uUIDs, err)
+	return _c
+}
+
+func (_c *MockRepository_StaleUnaccepted_Call) RunAndReturn(run func(ctx context.Context, before time.Time, limit int) ([]uuid.UUID, error)) *MockRepository_StaleUnaccepted_Call {
 	_c.Call.Return(run)
 	return _c
 }

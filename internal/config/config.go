@@ -20,6 +20,7 @@ type Config struct {
 	HTTP     HTTP       `envPrefix:"HTTP_"`
 	Postgres Postgres   `envPrefix:"POSTGRES_"`
 	Kafka    Kafka      `envPrefix:"KAFKA_"`
+	Worker   Worker
 }
 
 // HTTP configures the embedded HTTP server. It sets no write deadline, so
@@ -42,8 +43,47 @@ type Postgres struct {
 // from is part of what it is told at onboarding; the status topic is read by
 // the platform itself.
 type Kafka struct {
-	OrdersTopic string `env:"ORDERS_TOPIC" envDefault:"kitchen.orders.v1"`
-	StatusTopic string `env:"STATUS_TOPIC" envDefault:"kitchen.order-status.v1"`
+	Brokers     []string      `env:"BROKERS"          envDefault:"localhost:9092" envSeparator:","`
+	OrdersTopic string        `env:"ORDERS_TOPIC"     envDefault:"kitchen.orders.v1"`
+	StatusTopic string        `env:"STATUS_TOPIC"     envDefault:"kitchen.order-status.v1"`
+	Partitions  int           `env:"TOPIC_PARTITIONS" envDefault:"3"`
+	Timeout     time.Duration `env:"TIMEOUT"     envDefault:"10s"`
+}
+
+// Topics returns every topic the platform publishes to.
+func (k Kafka) Topics() []string {
+	return []string{k.OrdersTopic, k.StatusTopic}
+}
+
+// Worker configures the background jobs. The names of the variables are the
+// knobs of the deployment and are spelled out rather than prefixed.
+type Worker struct {
+	Outbox        OutboxJob
+	Reaper        ReaperJob
+	IdempotencyGC IdempotencyGCJob
+}
+
+// OutboxJob configures the publishing of the accumulated events. PollMin is
+// the pause after a partial batch, PollMax the longest pause on an idle table:
+// it is the only setting that decides how long an event waits to be delivered.
+type OutboxJob struct {
+	BatchSize int           `env:"OUTBOX_BATCH_SIZE" envDefault:"100"`
+	PollMin   time.Duration `env:"OUTBOX_POLL_MIN"   envDefault:"50ms"`
+	PollMax   time.Duration `env:"OUTBOX_POLL_MAX"   envDefault:"250ms"`
+}
+
+// ReaperJob configures the automatic rejection of the orders no venue has
+// taken into work. AcceptTimeout is how long an order waits for its venue.
+type ReaperJob struct {
+	AcceptTimeout time.Duration `env:"ORDER_ACCEPT_TIMEOUT"    envDefault:"5m"`
+	Interval      time.Duration `env:"ORDER_REAPER_INTERVAL"   envDefault:"15s"`
+	BatchSize     int           `env:"ORDER_REAPER_BATCH_SIZE" envDefault:"50"`
+}
+
+// IdempotencyGCJob configures the collection of the expired idempotency keys.
+type IdempotencyGCJob struct {
+	Interval  time.Duration `env:"IDEMPOTENCY_GC_INTERVAL"   envDefault:"10m"`
+	BatchSize int           `env:"IDEMPOTENCY_GC_BATCH_SIZE" envDefault:"1000"`
 }
 
 // Orders configures the placing of orders.

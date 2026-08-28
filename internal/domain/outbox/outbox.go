@@ -4,7 +4,11 @@
 // later and elsewhere.
 package outbox
 
-import "github.com/google/uuid"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // Event types the platform publishes.
 const (
@@ -30,4 +34,16 @@ type Message struct {
 	AggregateID      uuid.UUID
 	AggregateVersion int64
 	Payload          []byte
+}
+
+// Pending is a stored message waiting to be published. ID orders the messages
+// of one aggregate as they were written; EventID identifies the event itself
+// and survives every retry, so that a consumer can deduplicate by it.
+// OccurredAt is the moment of the domain change, not of the publishing.
+type Pending struct {
+	Message
+
+	ID         int64
+	EventID    uuid.UUID
+	OccurredAt time.Time
 }

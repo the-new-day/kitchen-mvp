@@ -6,9 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+// reapReason is what a customer is told about an order the platform gave up
+// waiting for.
+const reapReason = "the venue did not accept the order in time"
 
 // locate reads the order a transition is applied to and holds it locked. It is
 // what tells the customer side of a transition from the venue side: each looks
@@ -79,6 +84,42 @@ func (s *Service) Handover(
 	})
 }
 
+// Reap rejects the orders that were placed before the given moment and are
+// still waiting to be accepted, at most limit of them, and returns how many
+// were rejected. The rejection is the same domain transition the venue itself
+// would cause, only by another actor: the stock comes back, the history keeps
+// the move and the events go out exactly as they would otherwise.
+//
+// Each order is moved in its own transaction, and an order the venue got to
+// first, or is holding right now, is left alone: the lock does not give it out
+// once it has left the status it was picked in.
+func (s *Service) Reap(ctx context.Context, before time.Time, limit int) (int, error) {
+	stale, err := s.orders.StaleUnaccepted(ctx, before, limit)
+	if err != nil {
+		return 0, fmt.Errorf("list orders unaccepted since %s: %w", before, err)
+	}
+
+	reaped := 0
+
+	for _, orderID := range stale {
+		_, err := s.move(ctx, s.bySystem(orderID), order.Command{
+			Event:  order.EventReject,
+			Actor:  order.ActorSystem,
+			Reason: reapReason,
+		})
+
+		switch {
+		case err == nil:
+			reaped++
+		case errors.Is(err, domain.ErrNotFound):
+		default:
+			return reaped, err
+		}
+	}
+
+	return reaped, nil
+}
+
 func (s *Service) byCustomer(userID, orderID uuid.UUID) locate {
 	return func(ctx context.Context) (order.Order, error) {
 		return s.orders.LockForCustomer(ctx, userID, orderID)
@@ -88,6 +129,12 @@ func (s *Service) byCustomer(userID, orderID uuid.UUID) locate {
 func (s *Service) byVenue(venueID, orderID uuid.UUID) locate {
 	return func(ctx context.Context) (order.Order, error) {
 		return s.orders.LockForVenue(ctx, venueID, orderID)
+	}
+}
+
+func (s *Service) bySystem(orderID uuid.UUID) locate {
+	return func(ctx context.Context) (order.Order, error) {
+		return s.orders.LockUnaccepted(ctx, orderID)
 	}
 }
 

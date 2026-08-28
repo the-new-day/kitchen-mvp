@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -444,4 +445,61 @@ func (r *OrderRepo) recordChange(
 	}
 
 	return seq, nil
+}
+
+// StaleUnaccepted returns the orders no venue has taken into work since
+// before, oldest first. Only the identifiers are read: each of them is then
+// moved on its own, under its own lock.
+func (r *OrderRepo) StaleUnaccepted(
+	ctx context.Context, before time.Time, limit int,
+) ([]uuid.UUID, error) {
+	const query = `
+		SELECT id FROM orders
+		WHERE status = 'CREATED' AND created_at < $1
+		ORDER BY created_at
+		LIMIT $2`
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query stale orders: %w", err)
+	}
+
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return nil, fmt.Errorf("scan stale orders: %w", err)
+	}
+
+	return ids, nil
+}
+
+// LockUnaccepted reads an order that is still waiting to be accepted and holds
+// it until the end of the transaction. An order the venue has meanwhile taken,
+// or is holding right now, is reported as domain.ErrNotFound instead of being
+// waited for: its fate is being decided already and there is nothing to reap.
+func (r *OrderRepo) LockUnaccepted(ctx context.Context, orderID uuid.UUID) (order.Order, error) {
+	query := fmt.Sprintf(`
+		SELECT %s FROM orders o JOIN venues v ON v.id = o.venue_id
+		WHERE o.id = $1 AND o.status = 'CREATED'
+		FOR UPDATE OF o SKIP LOCKED`, orderColumns)
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, orderID)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("query unaccepted order for update: %w", err)
+	}
+
+	locked, err := pgx.CollectExactlyOneRow(rows, scanOrder)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return order.Order{}, domain.ErrNotFound
+		}
+
+		return order.Order{}, fmt.Errorf("scan unaccepted order for update: %w", err)
+	}
+
+	page := []order.Order{locked}
+	if err := r.attachItems(ctx, page); err != nil {
+		return order.Order{}, err
+	}
+
+	return page[0], nil
 }

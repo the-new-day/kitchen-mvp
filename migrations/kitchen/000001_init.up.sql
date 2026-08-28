@@ -183,7 +183,7 @@ CREATE TABLE outbox_messages (
     last_error        text
 );
 
-CREATE INDEX outbox_messages_unpublished_idx ON outbox_messages (created_at) WHERE published_at IS NULL;
+CREATE INDEX outbox_messages_unpublished_idx ON outbox_messages (id) WHERE published_at IS NULL;
 
 CREATE TABLE processed_events (
     consumer     text NOT NULL,

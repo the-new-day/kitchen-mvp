@@ -101,6 +101,10 @@ services:
     environment:
       <<: *app-env
       HTTP_ADDR: ":8080"
+      POSTGRES_DSN: postgres://kitchen:kitchen@postgres:5432/kitchen?sslmode=disable
+      KAFKA_BROKERS: redpanda:9092
+      # A demo waits half a minute for the venue, not the five production minutes.
+      ORDER_ACCEPT_TIMEOUT: 30s
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz || exit 1"]
       interval: 3s

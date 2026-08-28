@@ -107,3 +107,24 @@ func scanIdempotencyRecord(row pgx.CollectableRow) (idempotency.Record, error) {
 
 	return stored, err
 }
+
+// DeleteExpired removes at most limit keys whose answers are no longer kept
+// and returns how many were removed. Rows another collector is already holding
+// are skipped rather than waited for.
+func (r *IdempotencyRepo) DeleteExpired(ctx context.Context, limit int) (int64, error) {
+	const query = `
+		DELETE FROM idempotency_keys
+		WHERE (user_id, key) IN (
+			SELECT user_id, key FROM idempotency_keys
+			WHERE expires_at < now()
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		)`
+
+	tag, err := r.db.conn(ctx).Exec(ctx, query, limit)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired idempotency keys: %w", err)
+	}
+
+	return tag.RowsAffected(), nil
+}
