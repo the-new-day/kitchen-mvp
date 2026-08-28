@@ -10,6 +10,7 @@ import (
 	"avito-kitchen/internal/transport/http/partner"
 	cartusecase "avito-kitchen/internal/usecase/cart"
 	"avito-kitchen/internal/usecase/catalog"
+	orderusecase "avito-kitchen/internal/usecase/order"
 	partnerusecase "avito-kitchen/internal/usecase/partner"
 	"context"
 	"fmt"
@@ -59,14 +60,23 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	defer db.Close()
 
 	venues, menus := postgres.NewVenueRepo(db), postgres.NewMenuRepo(db)
-	carts := postgres.NewCartRepo(db)
+	carts, orders := postgres.NewCartRepo(db), postgres.NewOrderRepo(db)
+	messages, keys := postgres.NewOutboxRepo(db), postgres.NewIdempotencyRepo(db)
 
-	catalogService := catalog.New(venues, menus)
-	cartService := cartusecase.New(db, carts, menus)
+	services := kitchen.Services{
+		Catalog: catalog.New(venues, menus),
+		Cart:    cartusecase.New(db, carts, menus),
+		Order:   orderusecase.New(db, orders, carts, menus, messages, cfg.Kafka.OrdersTopic),
+	}
 	partnerService := partnerusecase.New(venues, menus)
 
 	router := httpx.NewRouter(log)
-	kitchen.Mount(router, catalogService, cartService, log)
+
+	idempotent := kitchen.Idempotency{Store: keys, Tx: db, TTL: cfg.Orders.IdempotencyTTL}
+	if err := kitchen.Mount(router, services, idempotent, log); err != nil {
+		return err
+	}
+
 	partner.Mount(router, partnerService, cfg.Kafka.OrdersTopic, log)
 
 	return httpx.Serve(ctx, cfg.HTTP, router, log)

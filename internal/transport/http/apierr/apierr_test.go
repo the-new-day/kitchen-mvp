@@ -46,6 +46,18 @@ func TestErrorHandlerResponse(t *testing.T) {
 			wantCode:   "cart_venue_conflict",
 			wantText:   "cart already holds items of another venue",
 		},
+		"below the minimum is not a conflict but a refusal": {
+			err: fmt.Errorf("create order: %w",
+				domain.Unprocessablef("below_minimum", "order is below the minimum")),
+			wantStatus: http.StatusUnprocessableEntity,
+			wantCode:   "below_minimum",
+			wantText:   "order is below the minimum",
+		},
+		"a forbidden transition of an order": {
+			err:        fmt.Errorf("accept order: %w", domain.ErrInvalidTransition),
+			wantStatus: http.StatusConflict,
+			wantCode:   "invalid_transition",
+		},
 		"operation of a later stage": {
 			err:        apierr.ErrNotImplemented,
 			wantStatus: http.StatusNotImplemented,

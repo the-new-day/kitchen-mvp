@@ -213,3 +213,16 @@ func (r *CartRepo) forgetEmptyVenue(ctx context.Context, userID uuid.UUID) error
 
 	return nil
 }
+
+// Lock holds the cart of a customer until the end of the transaction, so that
+// two orders placed at once cannot both be made out of it. A customer without
+// a cart has nothing to lock and nothing to order.
+func (r *CartRepo) Lock(ctx context.Context, userID uuid.UUID) error {
+	const query = `SELECT 1 FROM carts WHERE user_id = $1 FOR UPDATE`
+
+	if _, err := r.db.conn(ctx).Exec(ctx, query, userID); err != nil {
+		return fmt.Errorf("lock cart: %w", err)
+	}
+
+	return nil
+}

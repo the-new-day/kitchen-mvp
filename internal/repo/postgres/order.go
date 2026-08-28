@@ -1,0 +1,297 @@
+package postgres
+
+import (
+	"avito-kitchen/internal/domain"
+	"avito-kitchen/internal/domain/order"
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+)
+
+// OrderRepo stores the orders of the customers.
+type OrderRepo struct {
+	db *DB
+}
+
+// NewOrderRepo returns a repository over db.
+func NewOrderRepo(db *DB) *OrderRepo {
+	return &OrderRepo{db: db}
+}
+
+const orderColumns = `
+	o.id, o.number, o.user_id, o.venue_id, v.name, o.status,
+	o.items_total, o.delivery_fee, o.total, o.address, o.phone, o.comment,
+	o.eta_minutes, o.rejection_reason, o.version, o.created_at, o.updated_at`
+
+// Create stores an order with the prices of its items copied into it and opens
+// its status history. The stock the order spends is expected to have been
+// reserved in the same transaction.
+func (r *OrderRepo) Create(ctx context.Context, draft order.Draft) (order.Order, error) {
+	created, err := r.insertOrder(ctx, draft)
+	if err != nil {
+		return order.Order{}, err
+	}
+
+	if err := r.insertItems(ctx, created.ID, draft.Items); err != nil {
+		return order.Order{}, err
+	}
+
+	if err := r.appendHistory(ctx, created.ID, created.Status); err != nil {
+		return order.Order{}, err
+	}
+
+	created.Items = draft.Items
+
+	return created, nil
+}
+
+// insertOrder writes the order itself and reads it back together with the name
+// of its venue, so that the card is complete without a second round trip.
+func (r *OrderRepo) insertOrder(ctx context.Context, draft order.Draft) (order.Order, error) {
+	query := fmt.Sprintf(`
+		WITH inserted AS (
+			INSERT INTO orders (
+				user_id, venue_id, items_total, delivery_fee, total,
+				address, phone, comment
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING *
+		)
+		SELECT %s FROM inserted o JOIN venues v ON v.id = o.venue_id`, orderColumns)
+
+	rows, err := r.db.conn(ctx).Query(ctx, query,
+		draft.UserID, draft.VenueID, draft.ItemsTotal, draft.DeliveryFee, draft.Total,
+		draft.Address, draft.Phone, draft.Comment,
+	)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("insert order: %w", err)
+	}
+
+	created, err := pgx.CollectExactlyOneRow(rows, scanOrder)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("scan order: %w", err)
+	}
+
+	return created, nil
+}
+
+// insertItems writes the ordered positions as a snapshot: the name and the
+// price are copies, so that the order reads the same years later.
+func (r *OrderRepo) insertItems(ctx context.Context, orderID uuid.UUID, items []order.Item) error {
+	const query = `
+		INSERT INTO order_items (
+			order_id, menu_item_id, external_id, name_snapshot, price_snapshot, qty
+		)
+		SELECT $1, i.menu_item_id, i.external_id, i.name, i.price, i.qty
+		FROM unnest($2::uuid[], $3::text[], $4::text[], $5::bigint[], $6::integer[])
+			AS i(menu_item_id, external_id, name, price, qty)`
+
+	ids := make([]uuid.UUID, len(items))
+	externalIDs := make([]string, len(items))
+	names := make([]string, len(items))
+	prices := make([]int64, len(items))
+	quantities := make([]int, len(items))
+
+	for i, item := range items {
+		ids[i] = item.MenuItemID
+		externalIDs[i] = item.ExternalID
+		names[i] = item.Name
+		prices[i] = item.Price
+		quantities[i] = item.Qty
+	}
+
+	if _, err := r.db.conn(ctx).Exec(ctx, query,
+		orderID, ids, externalIDs, names, prices, quantities,
+	); err != nil {
+		return fmt.Errorf("insert order items: %w", err)
+	}
+
+	return nil
+}
+
+// appendHistory opens the status history of a new order: it comes from no
+// status at all, and the customer is who put it there.
+func (r *OrderRepo) appendHistory(
+	ctx context.Context, orderID uuid.UUID, status order.Status,
+) error {
+	const query = `
+		INSERT INTO order_status_history (order_id, from_status, to_status, actor)
+		VALUES ($1, NULL, $2, $3)`
+
+	if _, err := r.db.conn(ctx).Exec(ctx, query, orderID, status, order.ActorCustomer); err != nil {
+		return fmt.Errorf("insert order status history: %w", err)
+	}
+
+	return nil
+}
+
+// Get returns one order of a customer. An order that does not exist and an
+// order of somebody else are both reported as domain.ErrNotFound.
+func (r *OrderRepo) Get(ctx context.Context, userID, orderID uuid.UUID) (order.Order, error) {
+	query := fmt.Sprintf(`
+		SELECT %s FROM orders o JOIN venues v ON v.id = o.venue_id
+		WHERE o.id = $1 AND o.user_id = $2`, orderColumns)
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, orderID, userID)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("query order: %w", err)
+	}
+
+	found, err := pgx.CollectExactlyOneRow(rows, scanOrder)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return order.Order{}, domain.ErrNotFound
+		}
+
+		return order.Order{}, fmt.Errorf("scan order: %w", err)
+	}
+
+	page := []order.Order{found}
+	if err := r.attachItems(ctx, page); err != nil {
+		return order.Order{}, err
+	}
+
+	return page[0], nil
+}
+
+// List returns at most f.Limit orders of a customer, newest first, starting
+// after f.After. The positions of the page are read by a second query, not one
+// per order.
+func (r *OrderRepo) List(ctx context.Context, f order.Filter) ([]order.Order, error) {
+	conds := []string{"o.user_id = $1"}
+	args := []any{f.UserID}
+
+	if len(f.Statuses) > 0 {
+		statuses := make([]string, 0, len(f.Statuses))
+		for _, status := range f.Statuses {
+			statuses = append(statuses, string(status))
+		}
+
+		args = append(args, statuses)
+		conds = append(conds, fmt.Sprintf("o.status = ANY($%d::text[]::order_status[])", len(args)))
+	}
+
+	if f.After != nil {
+		args = append(args, f.After.CreatedAt, f.After.ID)
+		conds = append(conds, fmt.Sprintf("(o.created_at, o.id) < ($%d::timestamptz, $%d::uuid)",
+			len(args)-1, len(args)))
+	}
+
+	args = append(args, f.Limit)
+	query := fmt.Sprintf(`
+		SELECT %s FROM orders o JOIN venues v ON v.id = o.venue_id
+		WHERE %s ORDER BY o.created_at DESC, o.id DESC LIMIT $%d`,
+		orderColumns, strings.Join(conds, " AND "), len(args))
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query orders: %w", err)
+	}
+
+	orders, err := pgx.CollectRows(rows, scanOrder)
+	if err != nil {
+		return nil, fmt.Errorf("scan orders: %w", err)
+	}
+
+	if err := r.attachItems(ctx, orders); err != nil {
+		return nil, err
+	}
+
+	return orders, nil
+}
+
+// orderItem is one row of the positions of a page of orders.
+type orderItem struct {
+	orderID uuid.UUID
+	item    order.Item
+}
+
+// attachItems fills the positions of every order of the page with one query.
+func (r *OrderRepo) attachItems(ctx context.Context, orders []order.Order) error {
+	if len(orders) == 0 {
+		return nil
+	}
+
+	ids := make([]uuid.UUID, 0, len(orders))
+	for _, o := range orders {
+		ids = append(ids, o.ID)
+	}
+
+	const query = `
+		SELECT order_id, menu_item_id, external_id, name_snapshot, price_snapshot, qty
+		FROM order_items
+		WHERE order_id = ANY($1)
+		ORDER BY order_id, name_snapshot`
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, ids)
+	if err != nil {
+		return fmt.Errorf("query order items: %w", err)
+	}
+
+	pairs, err := pgx.CollectRows(rows, scanOrderItem)
+	if err != nil {
+		return fmt.Errorf("scan order items: %w", err)
+	}
+
+	byOrder := make(map[uuid.UUID][]order.Item, len(orders))
+	for _, p := range pairs {
+		byOrder[p.orderID] = append(byOrder[p.orderID], p.item)
+	}
+
+	for i := range orders {
+		orders[i].Items = byOrder[orders[i].ID]
+	}
+
+	return nil
+}
+
+func scanOrder(row pgx.CollectableRow) (order.Order, error) {
+	var (
+		o               order.Order
+		address         *string
+		comment         *string
+		rejectionReason *string
+	)
+
+	err := row.Scan(
+		&o.ID, &o.Number, &o.UserID, &o.Venue.ID, &o.Venue.Name, &o.Status,
+		&o.ItemsTotal, &o.DeliveryFee, &o.Total, &address, &o.Phone, &comment,
+		&o.EtaMinutes, &rejectionReason, &o.Version, &o.CreatedAt, &o.UpdatedAt,
+	)
+
+	if address != nil {
+		o.Address = *address
+	}
+
+	if comment != nil {
+		o.Comment = *comment
+	}
+
+	if rejectionReason != nil {
+		o.RejectionReason = *rejectionReason
+	}
+
+	return o, err
+}
+
+// scanOrderItem reads one position. The menu item it was taken from may be
+// gone: the snapshot in the order does not depend on it.
+func scanOrderItem(row pgx.CollectableRow) (orderItem, error) {
+	var (
+		p        orderItem
+		menuItem *uuid.UUID
+	)
+
+	err := row.Scan(&p.orderID, &menuItem, &p.item.ExternalID,
+		&p.item.Name, &p.item.Price, &p.item.Qty)
+
+	if menuItem != nil {
+		p.item.MenuItemID = *menuItem
+	}
+
+	return p, err
+}

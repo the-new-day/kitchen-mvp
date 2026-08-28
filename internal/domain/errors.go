@@ -22,6 +22,14 @@ var (
 	// ErrConflict reports an action that contradicts the current state of the
 	// entity it acts on.
 	ErrConflict = errors.New("conflict")
+
+	// ErrInvalidTransition reports an order event that the state machine does
+	// not allow from the status the order is in.
+	ErrInvalidTransition = errors.New("invalid transition")
+
+	// ErrUnprocessable reports a request that is well formed and consistent
+	// with the state of the entity, yet cannot be carried out.
+	ErrUnprocessable = errors.New("unprocessable")
 )
 
 // InvalidArgumentf returns an ErrInvalidArgument whose message describes the
@@ -54,3 +62,20 @@ func Conflictf(code, format string, args ...any) error {
 func (e ConflictError) Error() string { return e.Message }
 
 func (e ConflictError) Unwrap() error { return ErrConflict }
+
+// UnprocessableError is an ErrUnprocessable carrying the machine-readable code
+// of the error envelope.
+type UnprocessableError struct {
+	Code    string
+	Message string
+}
+
+// Unprocessablef returns an UnprocessableError whose message is safe to show
+// to the client.
+func Unprocessablef(code, format string, args ...any) error {
+	return UnprocessableError{Code: code, Message: fmt.Sprintf(format, args...)}
+}
+
+func (e UnprocessableError) Error() string { return e.Message }
+
+func (e UnprocessableError) Unwrap() error { return ErrUnprocessable }

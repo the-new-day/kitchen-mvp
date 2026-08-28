@@ -13,7 +13,7 @@ const idempotentExtension = "x-idempotent"
 func TestIdempotentOperationsAreMarkedInTheSpec(t *testing.T) {
 	t.Parallel()
 
-	spec, err := kitchenapi.GetSwagger()
+	spec, err := kitchenapi.GetSpec()
 	if err != nil {
 		t.Fatalf("load embedded spec: %v", err)
 	}

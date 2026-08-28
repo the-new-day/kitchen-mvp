@@ -3,6 +3,7 @@ package postgres
 import (
 	"avito-kitchen/internal/domain"
 	"avito-kitchen/internal/domain/catalog"
+	"avito-kitchen/internal/domain/order"
 	"context"
 	"errors"
 	"fmt"
@@ -148,4 +149,64 @@ func (r *MenuRepo) MenuItem(ctx context.Context, venueID, itemID uuid.UUID) (cat
 	}
 
 	return item, nil
+}
+
+// ReserveStock takes the ordered quantities out of the stock of a venue and
+// reports the items it could not take them out of. The check and the decrement
+// are one conditional UPDATE: reading the stock first and writing it afterwards
+// would let two orders spend the same last portion.
+//
+// An item the venue keeps no count of is left alone; an item taken off the
+// menu is never reserved.
+func (r *MenuRepo) ReserveStock(
+	ctx context.Context, venueID uuid.UUID, items []order.Item,
+) ([]uuid.UUID, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+
+	const query = `
+		WITH wanted AS (
+			SELECT * FROM unnest($2::uuid[], $3::integer[]) AS w(item_id, qty)
+			ORDER BY item_id
+		)
+		UPDATE menu_items i
+		SET stock_qty = i.stock_qty - w.qty, updated_at = now()
+		FROM wanted w
+		WHERE i.id = w.item_id AND i.venue_id = $1 AND i.is_available
+		  AND (i.stock_qty IS NULL OR i.stock_qty >= w.qty)
+		RETURNING i.id`
+
+	ids := make([]uuid.UUID, len(items))
+	quantities := make([]int, len(items))
+
+	for i, item := range items {
+		ids[i] = item.MenuItemID
+		quantities[i] = item.Qty
+	}
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, venueID, ids, quantities)
+	if err != nil {
+		return nil, fmt.Errorf("query stock reservation: %w", err)
+	}
+
+	reserved, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return nil, fmt.Errorf("scan stock reservation: %w", err)
+	}
+
+	taken := make(map[uuid.UUID]struct{}, len(reserved))
+	for _, id := range reserved {
+		taken[id] = struct{}{}
+	}
+
+	var missed []uuid.UUID
+
+	for _, id := range ids {
+		if _, ok := taken[id]; !ok {
+			missed = append(missed, id)
+		}
+	}
+
+	return missed, nil
 }

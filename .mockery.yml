@@ -15,6 +15,17 @@ packages:
       Transactor: {}
       Repository: {}
       MenuRepository: {}
+  avito-kitchen/internal/usecase/order:
+    interfaces:
+      Transactor: {}
+      Repository: {}
+      CartRepository: {}
+      MenuRepository: {}
+      OutboxRepository: {}
+  avito-kitchen/internal/platform/idempotency:
+    interfaces:
+      Transactor: {}
+      Store: {}
   avito-kitchen/internal/usecase/partner:
     interfaces:
       VenueRepository: {}

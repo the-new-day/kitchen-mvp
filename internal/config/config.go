@@ -16,6 +16,7 @@ import (
 type Config struct {
 	Env      string     `env:"APP_ENV"   envDefault:"dev"`
 	LogLevel slog.Level `env:"LOG_LEVEL" envDefault:"info"`
+	Orders   Orders     `envPrefix:"ORDERS_"`
 	HTTP     HTTP       `envPrefix:"HTTP_"`
 	Postgres Postgres   `envPrefix:"POSTGRES_"`
 	Kafka    Kafka      `envPrefix:"KAFKA_"`
@@ -41,6 +42,13 @@ type Postgres struct {
 // from is part of what it is told at onboarding.
 type Kafka struct {
 	OrdersTopic string `env:"ORDERS_TOPIC" envDefault:"kitchen.orders.v1"`
+}
+
+// Orders configures the placing of orders.
+type Orders struct {
+	// IdempotencyTTL is how long the answer to an attempt of placing an order
+	// is kept to be given back to a repeat of it.
+	IdempotencyTTL time.Duration `env:"IDEMPOTENCY_TTL" envDefault:"24h"`
 }
 
 // Load reads the configuration from the environment.
