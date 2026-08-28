@@ -18,6 +18,7 @@ type Config struct {
 	LogLevel slog.Level `env:"LOG_LEVEL" envDefault:"info"`
 	HTTP     HTTP       `envPrefix:"HTTP_"`
 	Postgres Postgres   `envPrefix:"POSTGRES_"`
+	Kafka    Kafka      `envPrefix:"KAFKA_"`
 }
 
 // HTTP configures the embedded HTTP server. It sets no write deadline, so
@@ -34,6 +35,12 @@ type Postgres struct {
 	DSN            string        `env:"DSN"             envDefault:"postgres://kitchen:kitchen@localhost:5432/kitchen?sslmode=disable"`
 	MaxConns       int32         `env:"MAX_CONNS"       envDefault:"10"`
 	ConnectTimeout time.Duration `env:"CONNECT_TIMEOUT" envDefault:"5s"`
+}
+
+// Kafka names the topics of the platform. The topic a venue reads its orders
+// from is part of what it is told at onboarding.
+type Kafka struct {
+	OrdersTopic string `env:"ORDERS_TOPIC" envDefault:"kitchen.orders.v1"`
 }
 
 // Load reads the configuration from the environment.

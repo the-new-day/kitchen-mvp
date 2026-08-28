@@ -3,8 +3,12 @@ up:
 .PHONY: up
 
 down:
-	docker compose --profile "*" down -v --remove-orphans
+	docker compose --profile "*" down --remove-orphans
 .PHONY: down
+
+clean:
+	docker compose --profile "*" down -v --remove-orphans
+.PHONY: clean
 
 logs:
 	docker compose logs -f

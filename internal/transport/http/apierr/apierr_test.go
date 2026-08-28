@@ -1,8 +1,9 @@
-package kitchen
+package apierr_test
 
 import (
 	"avito-kitchen/internal/domain"
 	"avito-kitchen/internal/platform/httpx"
+	"avito-kitchen/internal/transport/http/apierr"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,8 +34,13 @@ func TestErrorHandlerResponse(t *testing.T) {
 			wantCode:   "invalid_request",
 			wantText:   "limit must be between 1 and 100",
 		},
+		"unknown api key": {
+			err:        fmt.Errorf("authenticate: %w", domain.ErrUnauthenticated),
+			wantStatus: http.StatusUnauthorized,
+			wantCode:   "unauthorized",
+		},
 		"operation of a later stage": {
-			err:        errNotImplemented,
+			err:        apierr.ErrNotImplemented,
 			wantStatus: http.StatusNotImplemented,
 			wantCode:   "not_implemented",
 		},
@@ -46,7 +52,7 @@ func TestErrorHandlerResponse(t *testing.T) {
 		},
 	}
 
-	handler := errorHandler{log: slog.New(slog.DiscardHandler)}
+	handler := apierr.Handler{Log: slog.New(slog.DiscardHandler)}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -55,7 +61,7 @@ func TestErrorHandlerResponse(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/venues", nil)
 
-			handler.response(recorder, request, tc.err)
+			handler.Response(recorder, request, tc.err)
 
 			if recorder.Code != tc.wantStatus {
 				t.Fatalf("status = %d, want %d", recorder.Code, tc.wantStatus)
@@ -82,8 +88,8 @@ func TestErrorHandlerRequest(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/venues/nope", nil)
 
-	errorHandler{log: slog.New(slog.DiscardHandler)}.
-		request(recorder, request, fmt.Errorf("invalid format for parameter venue_id"))
+	apierr.Handler{Log: slog.New(slog.DiscardHandler)}.
+		Request(recorder, request, fmt.Errorf("invalid format for parameter venue_id"))
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)

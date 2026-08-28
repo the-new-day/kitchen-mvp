@@ -206,3 +206,53 @@ func containsPattern(q string) string {
 
 	return "%" + escaped + "%"
 }
+
+// VenueByKeyHash returns the API key stored under the given hash together with
+// the venue it was issued to. A revoked key, or a key of a venue that is not
+// active, is reported as domain.ErrNotFound.
+func (r *VenueRepo) VenueByKeyHash(ctx context.Context, hash []byte) (catalog.VenueKey, error) {
+	const query = `
+		SELECT k.venue_id, k.key_hash
+		FROM venue_api_keys k
+		JOIN venues v ON v.id = k.venue_id
+		WHERE k.key_hash = $1 AND k.revoked_at IS NULL AND v.is_active`
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, hash)
+	if err != nil {
+		return catalog.VenueKey{}, fmt.Errorf("query api key: %w", err)
+	}
+
+	key, err := pgx.CollectExactlyOneRow(rows, func(row pgx.CollectableRow) (catalog.VenueKey, error) {
+		var k catalog.VenueKey
+		return k, row.Scan(&k.VenueID, &k.Hash)
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return catalog.VenueKey{}, domain.ErrNotFound
+		}
+
+		return catalog.VenueKey{}, fmt.Errorf("scan api key: %w", err)
+	}
+
+	return key, nil
+}
+
+// SetShift opens or closes the shift of a venue and returns the state it is in
+// afterwards. Setting the state it is already in changes nothing.
+func (r *VenueRepo) SetShift(ctx context.Context, id uuid.UUID, open bool) (bool, error) {
+	const query = `
+		UPDATE venues SET is_open = $2, updated_at = now()
+		WHERE id = $1 AND is_active
+		RETURNING is_open`
+
+	var isOpen bool
+	if err := r.db.conn(ctx).QueryRow(ctx, query, id, open).Scan(&isOpen); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, domain.ErrNotFound
+		}
+
+		return false, fmt.Errorf("update shift: %w", err)
+	}
+
+	return isOpen, nil
+}

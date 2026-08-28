@@ -14,6 +14,10 @@ var (
 
 	// ErrInvalidArgument reports that the request itself is malformed.
 	ErrInvalidArgument = errors.New("invalid argument")
+
+	// ErrUnauthenticated reports that the caller did not prove who it is: the
+	// credential is missing, unknown or revoked.
+	ErrUnauthenticated = errors.New("unauthenticated")
 )
 
 // InvalidArgumentf returns an ErrInvalidArgument whose message describes the

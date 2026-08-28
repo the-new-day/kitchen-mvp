@@ -2,7 +2,11 @@
 // that decide whether a menu item can be ordered right now.
 package catalog
 
-import "github.com/google/uuid"
+import (
+	"avito-kitchen/internal/domain"
+
+	"github.com/google/uuid"
+)
 
 // Cuisine is an entry of the cuisine reference book.
 type Cuisine struct {
@@ -94,4 +98,39 @@ type VenueCursor struct {
 	Sort VenueSort
 	Key  string
 	ID   uuid.UUID
+}
+
+// CategorizedMenuItem is a menu item together with the identifier its category
+// carries in the system of the venue.
+type CategorizedMenuItem struct {
+	MenuItem
+
+	CategoryExternalID string
+}
+
+// MenuItemPatch changes single fields of one menu item.
+// A nil field is left as it is.
+type MenuItemPatch struct {
+	Price       *int64
+	IsAvailable *bool
+	StockQty    *int
+}
+
+// Validate reports whether the patch may be applied.
+func (p MenuItemPatch) Validate() error {
+	switch {
+	case p.Price != nil && *p.Price < 0:
+		return domain.InvalidArgumentf("price must not be negative")
+	case p.StockQty != nil && *p.StockQty < 0:
+		return domain.InvalidArgumentf("stock_qty must not be negative")
+	default:
+		return nil
+	}
+}
+
+// VenueKey is an API key of a venue as the platform stores it: the venue it
+// was issued to and the hash of the key itself.
+type VenueKey struct {
+	VenueID uuid.UUID
+	Hash    []byte
 }
