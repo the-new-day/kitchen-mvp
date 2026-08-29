@@ -1,5 +1,6 @@
 // Command worker runs the background jobs of the platform: outbox publishing,
-// the order reaper and idempotency-key garbage collection. It serves /healthz.
+// the order reaper, the courier stand-in and idempotency-key garbage
+// collection. It serves /healthz.
 package main
 
 import (
@@ -82,6 +83,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	jobs := []worker.Job{
 		worker.NewOutbox(db, postgres.NewOutboxRepo(db), producer, cfg.Worker.Outbox, log),
 		worker.NewReaper(orders, cfg.Worker.Reaper, log),
+		worker.NewCourier(orders, cfg.Worker.Courier, log),
 		worker.NewIdempotencyGC(postgres.NewIdempotencyRepo(db), cfg.Worker.IdempotencyGC, log),
 	}
 

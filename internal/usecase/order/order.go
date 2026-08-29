@@ -39,6 +39,8 @@ type Repository interface {
 	LockForVenue(ctx context.Context, venueID, orderID uuid.UUID) (order.Order, error)
 	LockUnaccepted(ctx context.Context, orderID uuid.UUID) (order.Order, error)
 	StaleUnaccepted(ctx context.Context, before time.Time, limit int) ([]uuid.UUID, error)
+	LockDelivering(ctx context.Context, orderID uuid.UUID) (order.Order, error)
+	StaleDelivering(ctx context.Context, before time.Time, limit int) ([]uuid.UUID, error)
 	ApplyStatus(ctx context.Context, orderID uuid.UUID, change order.StatusChange) (order.Applied, error)
 }
 

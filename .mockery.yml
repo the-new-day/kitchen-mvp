@@ -44,6 +44,7 @@ packages:
       Publisher: {}
       Orders: {}
       Keys: {}
+      Deliveries: {}
   avito-kitchen/venue/internal/consumer:
     interfaces:
       Kitchen: {}

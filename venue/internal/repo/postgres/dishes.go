@@ -100,7 +100,8 @@ func (r *DishRepo) List(ctx context.Context) ([]kitchen.Dish, error) {
 func (r *DishRepo) Take(ctx context.Context, sku string, qty int) (kitchen.Dish, error) {
 	query := `
 		UPDATE dishes
-		SET stock = GREATEST(stock - $2, 0), updated_at = now()
+		SET stock = CASE WHEN stock IS NULL THEN NULL ELSE GREATEST(stock - $2, 0) END,
+		    updated_at = now()
 		WHERE sku = $1
 		RETURNING ` + dishColumns
 

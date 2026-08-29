@@ -109,6 +109,9 @@ services:
       KAFKA_BROKERS: redpanda:9092
       # A demo waits half a minute for the venue, not the five production minutes.
       ORDER_ACCEPT_TIMEOUT: 30s
+      # Nobody reports an arrival in the demo either: the courier stand-in
+      # closes an order five seconds after it has left the venue.
+      ORDER_DELIVERY_DURATION: 5s
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz || exit 1"]
       interval: 3s

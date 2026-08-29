@@ -23,7 +23,7 @@ build:
 .PHONY: build
 
 test:
-	go test -v -race ./...
+	go test -v -race -timeout 15m ./...
 .PHONY: test
 
 lint:
@@ -70,3 +70,11 @@ migrate-version:
 seed:
 	docker compose run --rm seeder
 .PHONY: seed
+
+demo:
+	go run ./cmd/demo
+.PHONY: demo
+
+diagrams:
+	docker run --rm -v "$(CURDIR)/docs:/data" plantuml/plantuml -tsvg "/data/*.puml"
+.PHONY: diagrams

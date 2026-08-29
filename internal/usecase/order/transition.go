@@ -89,35 +89,57 @@ func (s *Service) Handover(
 // were rejected. The rejection is the same domain transition the venue itself
 // would cause, only by another actor: the stock comes back, the history keeps
 // the move and the events go out exactly as they would otherwise.
-//
-// Each order is moved in its own transaction, and an order the venue got to
-// first, or is holding right now, is left alone: the lock does not give it out
-// once it has left the status it was picked in.
 func (s *Service) Reap(ctx context.Context, before time.Time, limit int) (int, error) {
 	stale, err := s.orders.StaleUnaccepted(ctx, before, limit)
 	if err != nil {
 		return 0, fmt.Errorf("list orders unaccepted since %s: %w", before, err)
 	}
 
-	reaped := 0
+	return s.sweep(ctx, stale, s.bySystem, order.Command{
+		Event:  order.EventReject,
+		Actor:  order.ActorSystem,
+		Reason: reapReason,
+	})
+}
 
-	for _, orderID := range stale {
-		_, err := s.move(ctx, s.bySystem(orderID), order.Command{
-			Event:  order.EventReject,
-			Actor:  order.ActorSystem,
-			Reason: reapReason,
-		})
+// Deliver closes the orders that left their venue before the given moment, at
+// most limit of them, and returns how many were closed. Nobody reports the
+// arrival of an order: the courier side of the platform is the one transition
+// no venue and no customer causes.
+func (s *Service) Deliver(ctx context.Context, before time.Time, limit int) (int, error) {
+	arrived, err := s.orders.StaleDelivering(ctx, before, limit)
+	if err != nil {
+		return 0, fmt.Errorf("list orders delivering since %s: %w", before, err)
+	}
+
+	return s.sweep(ctx, arrived, s.byRoad, order.Command{
+		Event: order.EventDeliver,
+		Actor: order.ActorSystem,
+	})
+}
+
+// sweep applies one command to a batch of orders, each in a transaction of its
+// own. An order somebody else got to first, or is holding right now, is left
+// alone: the lock does not give it out once it has left the status it was
+// picked in.
+func (s *Service) sweep(
+	ctx context.Context, ids []uuid.UUID, lock func(uuid.UUID) locate, cmd order.Command,
+) (int, error) {
+	moved := 0
+
+	for _, orderID := range ids {
+		_, err := s.move(ctx, lock(orderID), cmd)
 
 		switch {
 		case err == nil:
-			reaped++
+			moved++
 		case errors.Is(err, domain.ErrNotFound):
 		default:
-			return reaped, err
+			return moved, err
 		}
 	}
 
-	return reaped, nil
+	return moved, nil
 }
 
 func (s *Service) byCustomer(userID, orderID uuid.UUID) locate {
@@ -135,6 +157,12 @@ func (s *Service) byVenue(venueID, orderID uuid.UUID) locate {
 func (s *Service) bySystem(orderID uuid.UUID) locate {
 	return func(ctx context.Context) (order.Order, error) {
 		return s.orders.LockUnaccepted(ctx, orderID)
+	}
+}
+
+func (s *Service) byRoad(orderID uuid.UUID) locate {
+	return func(ctx context.Context) (order.Order, error) {
+		return s.orders.LockDelivering(ctx, orderID)
 	}
 }
 

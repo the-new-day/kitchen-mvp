@@ -1,6 +1,7 @@
 // Package worker holds the background jobs of the platform: publishing what
 // the domain has written to the outbox, rejecting the orders no venue has
-// taken in time and collecting the expired idempotency keys.
+// taken in time, closing the orders a delivery has had time to bring home and
+// collecting the expired idempotency keys.
 package worker
 
 import (

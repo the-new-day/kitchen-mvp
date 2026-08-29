@@ -82,6 +82,50 @@ func TestReaperRunsUntilStopped(t *testing.T) {
 	}
 }
 
+// TestCourierRunsUntilStopped checks that the courier stand-in asks for the
+// orders that left their venue longer ago than a delivery takes.
+func TestCourierRunsUntilStopped(t *testing.T) {
+	t.Parallel()
+
+	const delivery = 30 * time.Minute
+
+	ran := make(chan time.Time, 1)
+
+	orders := mocks.NewMockDeliveries(t)
+	orders.EXPECT().Deliver(mock.Anything, mock.Anything, 50).
+		RunAndReturn(func(_ context.Context, before time.Time, _ int) (int, error) {
+			select {
+			case ran <- before:
+			default:
+			}
+
+			return 1, nil
+		})
+
+	job := NewCourier(orders, config.CourierJob{
+		Delivery:  delivery,
+		Interval:  tick,
+		BatchSize: 50,
+	}, slog.New(slog.DiscardHandler))
+
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		job.Run(ctx)
+	}()
+
+	asked := awaited(t, ran, stop, done)
+
+	if waited := time.Since(asked); waited < delivery || waited > delivery+time.Second {
+		t.Fatalf("asked for orders older than %s, want about %s", waited, delivery)
+	}
+}
+
 // TestIdempotencyGCRunsUntilStopped checks that the collector keeps running on
 // its own schedule and stops with its context.
 func TestIdempotencyGCRunsUntilStopped(t *testing.T) {

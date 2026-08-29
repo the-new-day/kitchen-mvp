@@ -504,6 +504,62 @@ func (r *OrderRepo) LockUnaccepted(ctx context.Context, orderID uuid.UUID) (orde
 	return page[0], nil
 }
 
+
+// StaleDelivering returns the orders that have been on their way since before
+// the given moment, oldest first. Only the identifiers are read: each of them
+// is then closed on its own, under its own lock.
+func (r *OrderRepo) StaleDelivering(
+	ctx context.Context, before time.Time, limit int,
+) ([]uuid.UUID, error) {
+	const query = `
+		SELECT id FROM orders
+		WHERE status = 'DELIVERING' AND updated_at < $1
+		ORDER BY updated_at
+		LIMIT $2`
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query delivering orders: %w", err)
+	}
+
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return nil, fmt.Errorf("scan delivering orders: %w", err)
+	}
+
+	return ids, nil
+}
+
+// LockDelivering reads an order that is on its way and holds it until the end
+// of the transaction. An order that has meanwhile left the road, or is held by
+// somebody else right now, is reported as domain.ErrNotFound.
+func (r *OrderRepo) LockDelivering(ctx context.Context, orderID uuid.UUID) (order.Order, error) {
+	query := fmt.Sprintf(`
+		SELECT %s FROM orders o JOIN venues v ON v.id = o.venue_id
+		WHERE o.id = $1 AND o.status = 'DELIVERING'
+		FOR UPDATE OF o SKIP LOCKED`, orderColumns)
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, orderID)
+	if err != nil {
+		return order.Order{}, fmt.Errorf("query delivering order for update: %w", err)
+	}
+
+	locked, err := pgx.CollectExactlyOneRow(rows, scanOrder)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return order.Order{}, domain.ErrNotFound
+		}
+
+		return order.Order{}, fmt.Errorf("scan delivering order for update: %w", err)
+	}
+
+	page := []order.Order{locked}
+	if err := r.attachItems(ctx, page); err != nil {
+		return order.Order{}, err
+	}
+
+	return page[0], nil
+}
 // History returns the status entries of an order made after the entry number
 // after, oldest first. Zero returns the history whole.
 func (r *OrderRepo) History(

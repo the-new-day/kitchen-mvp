@@ -70,6 +70,7 @@ func (k Kafka) Topics() []string {
 type Worker struct {
 	Outbox        OutboxJob
 	Reaper        ReaperJob
+	Courier       CourierJob
 	IdempotencyGC IdempotencyGCJob
 }
 
@@ -88,6 +89,15 @@ type ReaperJob struct {
 	AcceptTimeout time.Duration `env:"ORDER_ACCEPT_TIMEOUT"    envDefault:"5m"`
 	Interval      time.Duration `env:"ORDER_REAPER_INTERVAL"   envDefault:"15s"`
 	BatchSize     int           `env:"ORDER_REAPER_BATCH_SIZE" envDefault:"50"`
+}
+
+// CourierJob configures the closing of the orders that have been on their way
+// long enough. Delivery is the time a courier is given for the road: nobody
+// reports the arrival, so the platform closes the order itself.
+type CourierJob struct {
+	Delivery  time.Duration `env:"ORDER_DELIVERY_DURATION"   envDefault:"30m"`
+	Interval  time.Duration `env:"ORDER_COURIER_INTERVAL"    envDefault:"5s"`
+	BatchSize int           `env:"ORDER_COURIER_BATCH_SIZE"  envDefault:"50"`
 }
 
 // IdempotencyGCJob configures the collection of the expired idempotency keys.

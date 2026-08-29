@@ -5,6 +5,7 @@ generate:
   chi-server: true
   strict-server: true
   embedded-spec: true
+  client: true
 output-options:
   exclude-operation-ids:
     - streamOrderEvents

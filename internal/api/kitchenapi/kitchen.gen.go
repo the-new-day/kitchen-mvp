@@ -458,6 +458,2854 @@ type CreateOrderJSONRequestBody = CreateOrderRequest
 // CancelOrderJSONRequestBody defines body for CancelOrder for application/json ContentType.
 type CancelOrderJSONRequestBody = CancelOrderRequest
 
+// RequestEditorFn is the function signature for the RequestEditor callback function
+type RequestEditorFn func(ctx context.Context, req *http.Request) error
+
+// Doer performs HTTP requests.
+//
+// The standard http.Client implements this interface.
+type HttpRequestDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+// Client which conforms to the OpenAPI3 specification for this service.
+type Client struct {
+	// The endpoint of the server conforming to this interface, with scheme,
+	// https://api.deepmap.com for example. This can contain a path relative
+	// to the server, such as https://api.deepmap.com/dev-test, and all the
+	// paths in the swagger spec will be appended to the server.
+	Server string
+
+	// Doer for performing requests, typically a *http.Client with any
+	// customized settings, such as certificate chains.
+	Client HttpRequestDoer
+
+	// A list of callbacks for modifying requests which are generated before sending over
+	// the network.
+	RequestEditors []RequestEditorFn
+}
+
+// ClientOption allows setting custom parameters during construction
+type ClientOption func(*Client) error
+
+// Creates a new Client, with reasonable defaults
+func NewClient(server string, opts ...ClientOption) (*Client, error) {
+	// create a client with sane default values
+	client := Client{
+		Server: server,
+	}
+	// mutate client and add all optional params
+	for _, o := range opts {
+		if err := o(&client); err != nil {
+			return nil, err
+		}
+	}
+	// ensure the server URL always has a trailing slash
+	if !strings.HasSuffix(client.Server, "/") {
+		client.Server += "/"
+	}
+	// create httpClient, if not already present
+	if client.Client == nil {
+		client.Client = &http.Client{}
+	}
+	return &client, nil
+}
+
+// WithHTTPClient allows overriding the default Doer, which is
+// automatically created using http.Client. This is useful for tests.
+func WithHTTPClient(doer HttpRequestDoer) ClientOption {
+	return func(c *Client) error {
+		c.Client = doer
+		return nil
+	}
+}
+
+// WithRequestEditorFn allows setting up a callback function, which will be
+// called right before sending the request. This can be used to mutate the request.
+func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
+	return func(c *Client) error {
+		c.RequestEditors = append(c.RequestEditors, fn)
+		return nil
+	}
+}
+
+// The interface specification for the client above.
+type ClientInterface interface {
+
+	// ClearCart Очистить корзину
+	//
+	// Corresponds with DELETE /cart (the `ClearCart` operationId).
+	ClearCart(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetCart Текущая корзина
+	//
+	// Corresponds with GET /cart (the `GetCart` operationId).
+	GetCart(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutCartItemWithBody Задать количество позиции в корзине
+	//
+	// Устанавливает итоговое количество. `qty: 0` удаляет позицию.
+	//
+	// В корзине могут лежать позиции только одного заведения: позиция другого
+	// заведения при непустой корзине — `409 cart_venue_conflict`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /cart/items (the `PutCartItem` operationId).
+	PutCartItemWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutCartItem Задать количество позиции в корзине
+	//
+	// Устанавливает итоговое количество. `qty: 0` удаляет позицию.
+	//
+	// В корзине могут лежать позиции только одного заведения: позиция другого
+	// заведения при непустой корзине — `409 cart_venue_conflict`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /cart/items (the `PutCartItem` operationId).
+	PutCartItem(ctx context.Context, body PutCartItemJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteCartItem Удалить позицию из корзины
+	//
+	// Corresponds with DELETE /cart/items/{item_id} (the `DeleteCartItem` operationId).
+	DeleteCartItem(ctx context.Context, itemId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ValidateCart Проверить корзину перед оформлением
+	//
+	// Сверяет корзину с текущим состоянием меню и заведения и возвращает
+	// список проблем. Клиент обязан вызвать её перед экраном оформления:
+	// `POST /orders` при непустом списке проблем завершится ошибкой.
+	//
+	// Corresponds with POST /cart/validate (the `ValidateCart` operationId).
+	ValidateCart(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListCuisines Справочник кухонь
+	//
+	// Значения для фильтра `cuisine` в списке заведений.
+	//
+	// Corresponds with GET /cuisines (the `ListCuisines` operationId).
+	ListCuisines(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListOrders Заказы пользователя
+	//
+	// Corresponds with GET /orders (the `ListOrders` operationId).
+	ListOrders(ctx context.Context, params *ListOrdersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateOrderWithBody Оформить заказ
+	//
+	// Создаёт заказ из текущей корзины и очищает её. Цены и названия позиций
+	// копируются в заказ снапшотом.
+	//
+	// Повторный запрос с тем же `Idempotency-Key` возвращает `200` и ранее
+	// отданный ответ. Тот же ключ с другим телом — `422
+	// idempotency_key_reuse`.
+	//
+	// `expected_total` — сумма, которую пользователь видел на экране.
+	// Расхождение с расчётом сервера даёт `409 price_mismatch`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /orders (the `CreateOrder` operationId).
+	CreateOrderWithBody(ctx context.Context, params *CreateOrderParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateOrder Оформить заказ
+	//
+	// Создаёт заказ из текущей корзины и очищает её. Цены и названия позиций
+	// копируются в заказ снапшотом.
+	//
+	// Повторный запрос с тем же `Idempotency-Key` возвращает `200` и ранее
+	// отданный ответ. Тот же ключ с другим телом — `422
+	// idempotency_key_reuse`.
+	//
+	// `expected_total` — сумма, которую пользователь видел на экране.
+	// Расхождение с расчётом сервера даёт `409 price_mismatch`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /orders (the `CreateOrder` operationId).
+	CreateOrder(ctx context.Context, params *CreateOrderParams, body CreateOrderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetOrder Карточка заказа
+	//
+	// Corresponds with GET /orders/{order_id} (the `GetOrder` operationId).
+	GetOrder(ctx context.Context, orderId OrderId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelOrderWithBody Отменить заказ
+	//
+	// Отмена возможна, пока заведение не начало готовить: из `CREATED` и
+	// `ACCEPTED`. Повторная отмена уже отменённого заказа возвращает `200`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /orders/{order_id}/cancel (the `CancelOrder` operationId).
+	CancelOrderWithBody(ctx context.Context, orderId OrderId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelOrder Отменить заказ
+	//
+	// Отмена возможна, пока заведение не начало готовить: из `CREATED` и
+	// `ACCEPTED`. Повторная отмена уже отменённого заказа возвращает `200`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /orders/{order_id}/cancel (the `CancelOrder` operationId).
+	CancelOrder(ctx context.Context, orderId OrderId, body CancelOrderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListVenues Список заведений
+	//
+	// Corresponds with GET /venues (the `ListVenues` operationId).
+	ListVenues(ctx context.Context, params *ListVenuesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetVenue Карточка заведения
+	//
+	// Corresponds with GET /venues/{venue_id} (the `GetVenue` operationId).
+	GetVenue(ctx context.Context, venueId VenueId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetVenueMenu Меню заведения
+	//
+	// Недоступные позиции остаются в выдаче с `is_available: false` и
+	// заполненным `unavailable_reason`.
+	//
+	// Corresponds with GET /venues/{venue_id}/menu (the `GetVenueMenu` operationId).
+	GetVenueMenu(ctx context.Context, venueId VenueId, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// ClearCart Очистить корзину
+//
+// Corresponds with DELETE /cart (the `ClearCart` operationId).
+func (c *Client) ClearCart(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewClearCartRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetCart Текущая корзина
+//
+// Corresponds with GET /cart (the `GetCart` operationId).
+func (c *Client) GetCart(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCartRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutCartItemWithBody Задать количество позиции в корзине
+//
+// Устанавливает итоговое количество. `qty: 0` удаляет позицию.
+//
+// В корзине могут лежать позиции только одного заведения: позиция другого
+// заведения при непустой корзине — `409 cart_venue_conflict`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /cart/items (the `PutCartItem` operationId).
+func (c *Client) PutCartItemWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutCartItemRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutCartItem Задать количество позиции в корзине
+//
+// Устанавливает итоговое количество. `qty: 0` удаляет позицию.
+//
+// В корзине могут лежать позиции только одного заведения: позиция другого
+// заведения при непустой корзине — `409 cart_venue_conflict`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /cart/items (the `PutCartItem` operationId).
+func (c *Client) PutCartItem(ctx context.Context, body PutCartItemJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutCartItemRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteCartItem Удалить позицию из корзины
+//
+// Corresponds with DELETE /cart/items/{item_id} (the `DeleteCartItem` operationId).
+func (c *Client) DeleteCartItem(ctx context.Context, itemId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteCartItemRequest(c.Server, itemId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ValidateCart Проверить корзину перед оформлением
+//
+// Сверяет корзину с текущим состоянием меню и заведения и возвращает
+// список проблем. Клиент обязан вызвать её перед экраном оформления:
+// `POST /orders` при непустом списке проблем завершится ошибкой.
+//
+// Corresponds with POST /cart/validate (the `ValidateCart` operationId).
+func (c *Client) ValidateCart(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewValidateCartRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListCuisines Справочник кухонь
+//
+// Значения для фильтра `cuisine` в списке заведений.
+//
+// Corresponds with GET /cuisines (the `ListCuisines` operationId).
+func (c *Client) ListCuisines(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListCuisinesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListOrders Заказы пользователя
+//
+// Corresponds with GET /orders (the `ListOrders` operationId).
+func (c *Client) ListOrders(ctx context.Context, params *ListOrdersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListOrdersRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateOrderWithBody Оформить заказ
+//
+// Создаёт заказ из текущей корзины и очищает её. Цены и названия позиций
+// копируются в заказ снапшотом.
+//
+// Повторный запрос с тем же `Idempotency-Key` возвращает `200` и ранее
+// отданный ответ. Тот же ключ с другим телом — `422
+// idempotency_key_reuse`.
+//
+// `expected_total` — сумма, которую пользователь видел на экране.
+// Расхождение с расчётом сервера даёт `409 price_mismatch`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /orders (the `CreateOrder` operationId).
+func (c *Client) CreateOrderWithBody(ctx context.Context, params *CreateOrderParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateOrderRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateOrder Оформить заказ
+//
+// Создаёт заказ из текущей корзины и очищает её. Цены и названия позиций
+// копируются в заказ снапшотом.
+//
+// Повторный запрос с тем же `Idempotency-Key` возвращает `200` и ранее
+// отданный ответ. Тот же ключ с другим телом — `422
+// idempotency_key_reuse`.
+//
+// `expected_total` — сумма, которую пользователь видел на экране.
+// Расхождение с расчётом сервера даёт `409 price_mismatch`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /orders (the `CreateOrder` operationId).
+func (c *Client) CreateOrder(ctx context.Context, params *CreateOrderParams, body CreateOrderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateOrderRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetOrder Карточка заказа
+//
+// Corresponds with GET /orders/{order_id} (the `GetOrder` operationId).
+func (c *Client) GetOrder(ctx context.Context, orderId OrderId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOrderRequest(c.Server, orderId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CancelOrderWithBody Отменить заказ
+//
+// Отмена возможна, пока заведение не начало готовить: из `CREATED` и
+// `ACCEPTED`. Повторная отмена уже отменённого заказа возвращает `200`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /orders/{order_id}/cancel (the `CancelOrder` operationId).
+func (c *Client) CancelOrderWithBody(ctx context.Context, orderId OrderId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelOrderRequestWithBody(c.Server, orderId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CancelOrder Отменить заказ
+//
+// Отмена возможна, пока заведение не начало готовить: из `CREATED` и
+// `ACCEPTED`. Повторная отмена уже отменённого заказа возвращает `200`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /orders/{order_id}/cancel (the `CancelOrder` operationId).
+func (c *Client) CancelOrder(ctx context.Context, orderId OrderId, body CancelOrderJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelOrderRequest(c.Server, orderId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListVenues Список заведений
+//
+// Corresponds with GET /venues (the `ListVenues` operationId).
+func (c *Client) ListVenues(ctx context.Context, params *ListVenuesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListVenuesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetVenue Карточка заведения
+//
+// Corresponds with GET /venues/{venue_id} (the `GetVenue` operationId).
+func (c *Client) GetVenue(ctx context.Context, venueId VenueId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetVenueRequest(c.Server, venueId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetVenueMenu Меню заведения
+//
+// Недоступные позиции остаются в выдаче с `is_available: false` и
+// заполненным `unavailable_reason`.
+//
+// Corresponds with GET /venues/{venue_id}/menu (the `GetVenueMenu` operationId).
+func (c *Client) GetVenueMenu(ctx context.Context, venueId VenueId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetVenueMenuRequest(c.Server, venueId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewClearCartRequest constructs an http.Request for the ClearCart method
+func NewClearCartRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/cart")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetCartRequest constructs an http.Request for the GetCart method
+func NewGetCartRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/cart")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutCartItemRequest calls the generic PutCartItem builder with application/json body
+func NewPutCartItemRequest(server string, body PutCartItemJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutCartItemRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPutCartItemRequestWithBody constructs an http.Request for the PutCartItem method, with any body, and a specified content type
+func NewPutCartItemRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/cart/items")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteCartItemRequest constructs an http.Request for the DeleteCartItem method
+func NewDeleteCartItemRequest(server string, itemId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "item_id", itemId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/cart/items/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewValidateCartRequest constructs an http.Request for the ValidateCart method
+func NewValidateCartRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/cart/validate")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListCuisinesRequest constructs an http.Request for the ListCuisines method
+func NewListCuisinesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/cuisines")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListOrdersRequest constructs an http.Request for the ListOrders method
+func NewListOrdersRequest(server string, params *ListOrdersParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/orders")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Status != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "status", *params.Status, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateOrderRequest calls the generic CreateOrder builder with application/json body
+func NewCreateOrderRequest(server string, params *CreateOrderParams, body CreateOrderJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateOrderRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewCreateOrderRequestWithBody constructs an http.Request for the CreateOrder method, with any body, and a specified content type
+func NewCreateOrderRequestWithBody(server string, params *CreateOrderParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/orders")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: "uuid"})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetOrderRequest constructs an http.Request for the GetOrder method
+func NewGetOrderRequest(server string, orderId OrderId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "order_id", orderId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/orders/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCancelOrderRequest calls the generic CancelOrder builder with application/json body
+func NewCancelOrderRequest(server string, orderId OrderId, body CancelOrderJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCancelOrderRequestWithBody(server, orderId, "application/json", bodyReader)
+}
+
+// NewCancelOrderRequestWithBody constructs an http.Request for the CancelOrder method, with any body, and a specified content type
+func NewCancelOrderRequestWithBody(server string, orderId OrderId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "order_id", orderId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/orders/%s/cancel", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListVenuesRequest constructs an http.Request for the ListVenues method
+func NewListVenuesRequest(server string, params *ListVenuesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/venues")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cuisine != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cuisine", *params.Cuisine, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.OpenNow != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "open_now", *params.OpenNow, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Sort != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sort", *params.Sort, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetVenueRequest constructs an http.Request for the GetVenue method
+func NewGetVenueRequest(server string, venueId VenueId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "venue_id", venueId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/venues/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetVenueMenuRequest constructs an http.Request for the GetVenueMenu method
+func NewGetVenueMenuRequest(server string, venueId VenueId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "venue_id", venueId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/venues/%s/menu", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
+	for _, r := range c.RequestEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	for _, r := range additionalEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ClientWithResponses builds on ClientInterface to offer response payloads
+type ClientWithResponses struct {
+	ClientInterface
+}
+
+// NewClientWithResponses creates a new ClientWithResponses, which wraps
+// Client with return type handling
+func NewClientWithResponses(server string, opts ...ClientOption) (*ClientWithResponses, error) {
+	client, err := NewClient(server, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &ClientWithResponses{client}, nil
+}
+
+// WithBaseURL overrides the baseURL.
+func WithBaseURL(baseURL string) ClientOption {
+	return func(c *Client) error {
+		newBaseURL, err := url.Parse(baseURL)
+		if err != nil {
+			return err
+		}
+		c.Server = newBaseURL.String()
+		return nil
+	}
+}
+
+// ClientWithResponsesInterface is the interface specification for the client with responses above.
+type ClientWithResponsesInterface interface {
+
+	// ClearCartWithResponse Очистить корзину
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /cart (the `ClearCart` operationId).
+	ClearCartWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ClearCartResponse, error)
+
+	// GetCartWithResponse Текущая корзина
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /cart (the `GetCart` operationId).
+	GetCartWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCartResponse, error)
+
+	// PutCartItemWithBodyWithResponse Задать количество позиции в корзине
+	//
+	// Устанавливает итоговое количество. `qty: 0` удаляет позицию.
+	//
+	// В корзине могут лежать позиции только одного заведения: позиция другого
+	// заведения при непустой корзине — `409 cart_venue_conflict`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /cart/items (the `PutCartItem` operationId).
+	PutCartItemWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutCartItemResponse, error)
+
+	// PutCartItemWithResponse Задать количество позиции в корзине
+	//
+	// Устанавливает итоговое количество. `qty: 0` удаляет позицию.
+	//
+	// В корзине могут лежать позиции только одного заведения: позиция другого
+	// заведения при непустой корзине — `409 cart_venue_conflict`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /cart/items (the `PutCartItem` operationId).
+	PutCartItemWithResponse(ctx context.Context, body PutCartItemJSONRequestBody, reqEditors ...RequestEditorFn) (*PutCartItemResponse, error)
+
+	// DeleteCartItemWithResponse Удалить позицию из корзины
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /cart/items/{item_id} (the `DeleteCartItem` operationId).
+	DeleteCartItemWithResponse(ctx context.Context, itemId openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteCartItemResponse, error)
+
+	// ValidateCartWithResponse Проверить корзину перед оформлением
+	//
+	// Сверяет корзину с текущим состоянием меню и заведения и возвращает
+	// список проблем. Клиент обязан вызвать её перед экраном оформления:
+	// `POST /orders` при непустом списке проблем завершится ошибкой.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /cart/validate (the `ValidateCart` operationId).
+	ValidateCartWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ValidateCartResponse, error)
+
+	// ListCuisinesWithResponse Справочник кухонь
+	//
+	// Значения для фильтра `cuisine` в списке заведений.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /cuisines (the `ListCuisines` operationId).
+	ListCuisinesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCuisinesResponse, error)
+
+	// ListOrdersWithResponse Заказы пользователя
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /orders (the `ListOrders` operationId).
+	ListOrdersWithResponse(ctx context.Context, params *ListOrdersParams, reqEditors ...RequestEditorFn) (*ListOrdersResponse, error)
+
+	// CreateOrderWithBodyWithResponse Оформить заказ
+	//
+	// Создаёт заказ из текущей корзины и очищает её. Цены и названия позиций
+	// копируются в заказ снапшотом.
+	//
+	// Повторный запрос с тем же `Idempotency-Key` возвращает `200` и ранее
+	// отданный ответ. Тот же ключ с другим телом — `422
+	// idempotency_key_reuse`.
+	//
+	// `expected_total` — сумма, которую пользователь видел на экране.
+	// Расхождение с расчётом сервера даёт `409 price_mismatch`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /orders (the `CreateOrder` operationId).
+	CreateOrderWithBodyWithResponse(ctx context.Context, params *CreateOrderParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateOrderResponse, error)
+
+	// CreateOrderWithResponse Оформить заказ
+	//
+	// Создаёт заказ из текущей корзины и очищает её. Цены и названия позиций
+	// копируются в заказ снапшотом.
+	//
+	// Повторный запрос с тем же `Idempotency-Key` возвращает `200` и ранее
+	// отданный ответ. Тот же ключ с другим телом — `422
+	// idempotency_key_reuse`.
+	//
+	// `expected_total` — сумма, которую пользователь видел на экране.
+	// Расхождение с расчётом сервера даёт `409 price_mismatch`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /orders (the `CreateOrder` operationId).
+	CreateOrderWithResponse(ctx context.Context, params *CreateOrderParams, body CreateOrderJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateOrderResponse, error)
+
+	// GetOrderWithResponse Карточка заказа
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /orders/{order_id} (the `GetOrder` operationId).
+	GetOrderWithResponse(ctx context.Context, orderId OrderId, reqEditors ...RequestEditorFn) (*GetOrderResponse, error)
+
+	// CancelOrderWithBodyWithResponse Отменить заказ
+	//
+	// Отмена возможна, пока заведение не начало готовить: из `CREATED` и
+	// `ACCEPTED`. Повторная отмена уже отменённого заказа возвращает `200`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /orders/{order_id}/cancel (the `CancelOrder` operationId).
+	CancelOrderWithBodyWithResponse(ctx context.Context, orderId OrderId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelOrderResponse, error)
+
+	// CancelOrderWithResponse Отменить заказ
+	//
+	// Отмена возможна, пока заведение не начало готовить: из `CREATED` и
+	// `ACCEPTED`. Повторная отмена уже отменённого заказа возвращает `200`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /orders/{order_id}/cancel (the `CancelOrder` operationId).
+	CancelOrderWithResponse(ctx context.Context, orderId OrderId, body CancelOrderJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelOrderResponse, error)
+
+	// ListVenuesWithResponse Список заведений
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /venues (the `ListVenues` operationId).
+	ListVenuesWithResponse(ctx context.Context, params *ListVenuesParams, reqEditors ...RequestEditorFn) (*ListVenuesResponse, error)
+
+	// GetVenueWithResponse Карточка заведения
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /venues/{venue_id} (the `GetVenue` operationId).
+	GetVenueWithResponse(ctx context.Context, venueId VenueId, reqEditors ...RequestEditorFn) (*GetVenueResponse, error)
+
+	// GetVenueMenuWithResponse Меню заведения
+	//
+	// Недоступные позиции остаются в выдаче с `is_available: false` и
+	// заполненным `unavailable_reason`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /venues/{venue_id}/menu (the `GetVenueMenu` operationId).
+	GetVenueMenuWithResponse(ctx context.Context, venueId VenueId, reqEditors ...RequestEditorFn) (*GetVenueMenuResponse, error)
+}
+
+type ClearCartResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ClearCartResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ClearCartResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ClearCartResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ClearCartResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ClearCartResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ClearCartResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetCartResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Cart
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetCartResponse) GetJSON200() *Cart {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetCartResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetCartResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetCartResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetCartResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetCartResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetCartResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutCartItemResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Cart
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutCartItemResponse) GetJSON200() *Cart {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutCartItemResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r PutCartItemResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r PutCartItemResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r PutCartItemResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r PutCartItemResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutCartItemResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutCartItemResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutCartItemResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteCartItemResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Cart
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DeleteCartItemResponse) GetJSON200() *Cart {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteCartItemResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteCartItemResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r DeleteCartItemResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteCartItemResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteCartItemResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteCartItemResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteCartItemResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ValidateCartResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CartValidation
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ValidateCartResponse) GetJSON200() *CartValidation {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ValidateCartResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ValidateCartResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ValidateCartResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ValidateCartResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ValidateCartResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ValidateCartResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListCuisinesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CuisineList
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListCuisinesResponse) GetJSON200() *CuisineList {
+	return r.JSON200
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListCuisinesResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListCuisinesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListCuisinesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListCuisinesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListCuisinesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListOrdersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *OrderList
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListOrdersResponse) GetJSON200() *OrderList {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListOrdersResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListOrdersResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListOrdersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListOrdersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListOrdersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListOrdersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateOrderResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Order
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Order
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Error
+	// JSON422 the response for an HTTP 422 `application/json` response
+	JSON422 *Error
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateOrderResponse) GetJSON200() *Order {
+	return r.JSON200
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateOrderResponse) GetJSON201() *Order {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateOrderResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateOrderResponse) GetJSON409() *Error {
+	return r.JSON409
+}
+
+// GetJSON422 returns the response for an HTTP 422 `application/json` response
+func (r CreateOrderResponse) GetJSON422() *Error {
+	return r.JSON422
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CreateOrderResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateOrderResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateOrderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateOrderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateOrderResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetOrderResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Order
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetOrderResponse) GetJSON200() *Order {
+	return r.JSON200
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetOrderResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetOrderResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetOrderResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOrderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOrderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetOrderResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CancelOrderResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Order
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *InvalidTransition
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CancelOrderResponse) GetJSON200() *Order {
+	return r.JSON200
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CancelOrderResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CancelOrderResponse) GetJSON409() *InvalidTransition {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r CancelOrderResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r CancelOrderResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CancelOrderResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CancelOrderResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CancelOrderResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListVenuesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *VenueList
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListVenuesResponse) GetJSON200() *VenueList {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListVenuesResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r ListVenuesResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListVenuesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListVenuesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListVenuesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListVenuesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetVenueResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Venue
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetVenueResponse) GetJSON200() *Venue {
+	return r.JSON200
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetVenueResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetVenueResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetVenueResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetVenueResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetVenueResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetVenueResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetVenueMenuResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Menu
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetVenueMenuResponse) GetJSON200() *Menu {
+	return r.JSON200
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetVenueMenuResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetVenueMenuResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetVenueMenuResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetVenueMenuResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetVenueMenuResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetVenueMenuResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ClearCartWithResponse Очистить корзину
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /cart (the `ClearCart` operationId).
+func (c *ClientWithResponses) ClearCartWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ClearCartResponse, error) {
+	rsp, err := c.ClearCart(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseClearCartResponse(rsp)
+}
+
+// GetCartWithResponse Текущая корзина
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /cart (the `GetCart` operationId).
+func (c *ClientWithResponses) GetCartWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCartResponse, error) {
+	rsp, err := c.GetCart(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetCartResponse(rsp)
+}
+
+// PutCartItemWithBodyWithResponse Задать количество позиции в корзине
+//
+// Устанавливает итоговое количество. `qty: 0` удаляет позицию.
+//
+// В корзине могут лежать позиции только одного заведения: позиция другого
+// заведения при непустой корзине — `409 cart_venue_conflict`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /cart/items (the `PutCartItem` operationId).
+func (c *ClientWithResponses) PutCartItemWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutCartItemResponse, error) {
+	rsp, err := c.PutCartItemWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutCartItemResponse(rsp)
+}
+
+// PutCartItemWithResponse Задать количество позиции в корзине
+//
+// Устанавливает итоговое количество. `qty: 0` удаляет позицию.
+//
+// В корзине могут лежать позиции только одного заведения: позиция другого
+// заведения при непустой корзине — `409 cart_venue_conflict`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /cart/items (the `PutCartItem` operationId).
+func (c *ClientWithResponses) PutCartItemWithResponse(ctx context.Context, body PutCartItemJSONRequestBody, reqEditors ...RequestEditorFn) (*PutCartItemResponse, error) {
+	rsp, err := c.PutCartItem(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutCartItemResponse(rsp)
+}
+
+// DeleteCartItemWithResponse Удалить позицию из корзины
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /cart/items/{item_id} (the `DeleteCartItem` operationId).
+func (c *ClientWithResponses) DeleteCartItemWithResponse(ctx context.Context, itemId openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteCartItemResponse, error) {
+	rsp, err := c.DeleteCartItem(ctx, itemId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteCartItemResponse(rsp)
+}
+
+// ValidateCartWithResponse Проверить корзину перед оформлением
+//
+// Сверяет корзину с текущим состоянием меню и заведения и возвращает
+// список проблем. Клиент обязан вызвать её перед экраном оформления:
+// `POST /orders` при непустом списке проблем завершится ошибкой.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /cart/validate (the `ValidateCart` operationId).
+func (c *ClientWithResponses) ValidateCartWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ValidateCartResponse, error) {
+	rsp, err := c.ValidateCart(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseValidateCartResponse(rsp)
+}
+
+// ListCuisinesWithResponse Справочник кухонь
+//
+// Значения для фильтра `cuisine` в списке заведений.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /cuisines (the `ListCuisines` operationId).
+func (c *ClientWithResponses) ListCuisinesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCuisinesResponse, error) {
+	rsp, err := c.ListCuisines(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListCuisinesResponse(rsp)
+}
+
+// ListOrdersWithResponse Заказы пользователя
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /orders (the `ListOrders` operationId).
+func (c *ClientWithResponses) ListOrdersWithResponse(ctx context.Context, params *ListOrdersParams, reqEditors ...RequestEditorFn) (*ListOrdersResponse, error) {
+	rsp, err := c.ListOrders(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListOrdersResponse(rsp)
+}
+
+// CreateOrderWithBodyWithResponse Оформить заказ
+//
+// Создаёт заказ из текущей корзины и очищает её. Цены и названия позиций
+// копируются в заказ снапшотом.
+//
+// Повторный запрос с тем же `Idempotency-Key` возвращает `200` и ранее
+// отданный ответ. Тот же ключ с другим телом — `422
+// idempotency_key_reuse`.
+//
+// `expected_total` — сумма, которую пользователь видел на экране.
+// Расхождение с расчётом сервера даёт `409 price_mismatch`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /orders (the `CreateOrder` operationId).
+func (c *ClientWithResponses) CreateOrderWithBodyWithResponse(ctx context.Context, params *CreateOrderParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateOrderResponse, error) {
+	rsp, err := c.CreateOrderWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateOrderResponse(rsp)
+}
+
+// CreateOrderWithResponse Оформить заказ
+//
+// Создаёт заказ из текущей корзины и очищает её. Цены и названия позиций
+// копируются в заказ снапшотом.
+//
+// Повторный запрос с тем же `Idempotency-Key` возвращает `200` и ранее
+// отданный ответ. Тот же ключ с другим телом — `422
+// idempotency_key_reuse`.
+//
+// `expected_total` — сумма, которую пользователь видел на экране.
+// Расхождение с расчётом сервера даёт `409 price_mismatch`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /orders (the `CreateOrder` operationId).
+func (c *ClientWithResponses) CreateOrderWithResponse(ctx context.Context, params *CreateOrderParams, body CreateOrderJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateOrderResponse, error) {
+	rsp, err := c.CreateOrder(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateOrderResponse(rsp)
+}
+
+// GetOrderWithResponse Карточка заказа
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /orders/{order_id} (the `GetOrder` operationId).
+func (c *ClientWithResponses) GetOrderWithResponse(ctx context.Context, orderId OrderId, reqEditors ...RequestEditorFn) (*GetOrderResponse, error) {
+	rsp, err := c.GetOrder(ctx, orderId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetOrderResponse(rsp)
+}
+
+// CancelOrderWithBodyWithResponse Отменить заказ
+//
+// Отмена возможна, пока заведение не начало готовить: из `CREATED` и
+// `ACCEPTED`. Повторная отмена уже отменённого заказа возвращает `200`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /orders/{order_id}/cancel (the `CancelOrder` operationId).
+func (c *ClientWithResponses) CancelOrderWithBodyWithResponse(ctx context.Context, orderId OrderId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelOrderResponse, error) {
+	rsp, err := c.CancelOrderWithBody(ctx, orderId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelOrderResponse(rsp)
+}
+
+// CancelOrderWithResponse Отменить заказ
+//
+// Отмена возможна, пока заведение не начало готовить: из `CREATED` и
+// `ACCEPTED`. Повторная отмена уже отменённого заказа возвращает `200`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /orders/{order_id}/cancel (the `CancelOrder` operationId).
+func (c *ClientWithResponses) CancelOrderWithResponse(ctx context.Context, orderId OrderId, body CancelOrderJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelOrderResponse, error) {
+	rsp, err := c.CancelOrder(ctx, orderId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelOrderResponse(rsp)
+}
+
+// ListVenuesWithResponse Список заведений
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /venues (the `ListVenues` operationId).
+func (c *ClientWithResponses) ListVenuesWithResponse(ctx context.Context, params *ListVenuesParams, reqEditors ...RequestEditorFn) (*ListVenuesResponse, error) {
+	rsp, err := c.ListVenues(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListVenuesResponse(rsp)
+}
+
+// GetVenueWithResponse Карточка заведения
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /venues/{venue_id} (the `GetVenue` operationId).
+func (c *ClientWithResponses) GetVenueWithResponse(ctx context.Context, venueId VenueId, reqEditors ...RequestEditorFn) (*GetVenueResponse, error) {
+	rsp, err := c.GetVenue(ctx, venueId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetVenueResponse(rsp)
+}
+
+// GetVenueMenuWithResponse Меню заведения
+//
+// Недоступные позиции остаются в выдаче с `is_available: false` и
+// заполненным `unavailable_reason`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /venues/{venue_id}/menu (the `GetVenueMenu` operationId).
+func (c *ClientWithResponses) GetVenueMenuWithResponse(ctx context.Context, venueId VenueId, reqEditors ...RequestEditorFn) (*GetVenueMenuResponse, error) {
+	rsp, err := c.GetVenueMenu(ctx, venueId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetVenueMenuResponse(rsp)
+}
+
+// ParseClearCartResponse parses an HTTP response from a ClearCartWithResponse call
+func ParseClearCartResponse(rsp *http.Response) (*ClearCartResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ClearCartResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetCartResponse parses an HTTP response from a GetCartWithResponse call
+func ParseGetCartResponse(rsp *http.Response) (*GetCartResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetCartResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Cart
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutCartItemResponse parses an HTTP response from a PutCartItemWithResponse call
+func ParsePutCartItemResponse(rsp *http.Response) (*PutCartItemResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutCartItemResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Cart
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteCartItemResponse parses an HTTP response from a DeleteCartItemWithResponse call
+func ParseDeleteCartItemResponse(rsp *http.Response) (*DeleteCartItemResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteCartItemResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Cart
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseValidateCartResponse parses an HTTP response from a ValidateCartWithResponse call
+func ParseValidateCartResponse(rsp *http.Response) (*ValidateCartResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ValidateCartResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CartValidation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListCuisinesResponse parses an HTTP response from a ListCuisinesWithResponse call
+func ParseListCuisinesResponse(rsp *http.Response) (*ListCuisinesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListCuisinesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CuisineList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListOrdersResponse parses an HTTP response from a ListOrdersWithResponse call
+func ParseListOrdersResponse(rsp *http.Response) (*ListOrdersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListOrdersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OrderList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateOrderResponse parses an HTTP response from a CreateOrderWithResponse call
+func ParseCreateOrderResponse(rsp *http.Response) (*CreateOrderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateOrderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Order
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Order
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetOrderResponse parses an HTTP response from a GetOrderWithResponse call
+func ParseGetOrderResponse(rsp *http.Response) (*GetOrderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetOrderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Order
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCancelOrderResponse parses an HTTP response from a CancelOrderWithResponse call
+func ParseCancelOrderResponse(rsp *http.Response) (*CancelOrderResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CancelOrderResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Order
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest InvalidTransition
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListVenuesResponse parses an HTTP response from a ListVenuesWithResponse call
+func ParseListVenuesResponse(rsp *http.Response) (*ListVenuesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListVenuesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VenueList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetVenueResponse parses an HTTP response from a GetVenueWithResponse call
+func ParseGetVenueResponse(rsp *http.Response) (*GetVenueResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetVenueResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Venue
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetVenueMenuResponse parses an HTTP response from a GetVenueMenuWithResponse call
+func ParseGetVenueMenuResponse(rsp *http.Response) (*GetVenueMenuResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetVenueMenuResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Menu
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// ClearCart Очистить корзину
