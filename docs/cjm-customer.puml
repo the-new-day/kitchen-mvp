@@ -1,0 +1,124 @@
+@startuml cjm-customer
+title CJM клиента — от поиска заведения до доставленного заказа
+
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam wrapWidth 420
+skinparam ArrowFontSize 11
+skinparam activity {
+  BackgroundColor #F5F7FA
+  BorderColor #4A6785
+  FontColor #1F2933
+  DiamondBackgroundColor #EEF2F7
+  DiamondBorderColor #4A6785
+  DiamondFontColor #1F2933
+  ArrowColor #4A6785
+}
+skinparam note {
+  BackgroundColor #FBFCFD
+  BorderColor #C7D0DA
+}
+
+start
+
+:Поиск заведения
+GET /venues?q=&cuisine=&open_now=&sort=;
+note right
+  Страницы отдаются по курсору:
+  next_cursor из предыдущего ответа.
+end note
+
+:Карточка и меню заведения
+GET /venues/{id}
+GET /venues/{id}/menu;
+note right
+  Позиция, которую сейчас не заказать,
+  приходит с is_available: false
+  и причиной: stopped, out_of_stock,
+  venue_closed.
+end note
+
+:Сборка корзины
+PUT /cart/items, DELETE /cart/items/{id};
+
+if (Позиция другого заведения?) then (да)
+  :409 cart_venue_conflict:
+  корзина остаётся прежней;
+  stop
+else (нет)
+endif
+
+repeat
+  :Проверка корзины
+  POST /cart/validate;
+
+  if (Проверка нашла проблемы?) then (да)
+    :Клиенту показано, что именно не так:
+    price_changed — старая и новая цена,
+    out_of_stock — сколько осталось,
+    item_unavailable — позиция снята с продажи,
+    venue_closed — смена закрыта,
+    below_minimum — сколько добрать (shortfall);
+    :Клиент решает сам: подтвердить новую цену,
+    поправить количество, убрать позицию,
+    добрать до минимума
+    или отказаться от заказа;
+
+    if (Клиент отказался?) then (да)
+      stop
+    else (нет)
+      :Правки в корзине
+      PUT /cart/items, DELETE /cart/items/{id};
+    endif
+  else (нет)
+  endif
+repeat while (Корзину правили?) is (да)
+->нет;
+
+:Оформление заказа
+POST /orders
+Idempotency-Key, expected_total;
+
+if (Ответ площадки) then (201)
+  :Заказ CREATED,
+  остатки зарезервированы;
+else (409 или 422)
+  :price_mismatch, out_of_stock,
+  venue_closed, below_minimum —
+  клиент возвращается к корзине;
+  stop
+endif
+
+:Отслеживание заказа
+GET /orders/{id}/events (SSE);
+
+fork
+  :ACCEPTED — заведение приняло
+  и назвало eta_minutes;
+  :COOKING;
+  :READY;
+  :DELIVERING;
+  :DELIVERED — заказ закрыт площадкой;
+fork again
+  if (Клиент отменяет до COOKING?) then (да)
+    :POST /orders/{id}/cancel → CANCELLED,
+    остатки возвращаются;
+    stop
+  else (нет)
+    :Из COOKING и дальше отмена даёт
+    409 invalid_transition
+    с details.current_status;
+  endif
+fork again
+  if (Заведение молчит дольше
+  ORDER_ACCEPT_TIMEOUT?) then (да)
+    :REJECTED от системы,
+    остатки возвращаются;
+    stop
+  else (нет)
+  endif
+end fork
+
+stop
+
+@enduml

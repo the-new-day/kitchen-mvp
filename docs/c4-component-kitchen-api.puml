@@ -1,0 +1,89 @@
+@startuml c4-component-kitchen-api
+title kitchen-api — C4 Level 3, компоненты
+
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam wrapWidth 400
+skinparam nodesep 40
+skinparam ranksep 50
+skinparam ArrowFontSize 11
+skinparam ArrowColor #4A6785
+skinparam rectangle {
+  BackgroundColor #F5F7FA
+  BorderColor #4A6785
+  FontColor #1F2933
+}
+skinparam database {
+  BackgroundColor #F5F7FA
+  BorderColor #4A6785
+  FontColor #1F2933
+}
+skinparam queue {
+  BackgroundColor #EEF2F7
+  BorderColor #4A6785
+  FontColor #1F2933
+}
+skinparam actorStyle awesome
+skinparam actor {
+  BorderColor #4A6785
+  FontColor #1F2933
+}
+
+actor "Клиент" as customer
+actor "Заведение" as venue
+
+rectangle "kitchen-api" as api {
+  rectangle "transport/http/kitchen\n\nКлиентские ручки, маппинг\nсгенерированных типов в домен" as kitchenhttp
+  rectangle "transport/http/partner\n\nПартнёрские ручки,\nаутентификация по X-Api-Key" as partnerhttp
+  rectangle "platform/idempotency\n\nMiddleware поверх\nidempotency_keys" as idem
+  rectangle "transport/sse\n\nХаб подписчиков:\nSubscribe, Publish" as hub
+  rectangle "consumer\n\nКонсьюмер статус-топика,\nсвоя consumer group" as statusconsumer
+
+  rectangle "usecase/catalog" as uccatalog
+  rectangle "usecase/cart" as uccart
+  rectangle "usecase/order\n\nСоздание, переходы, отмена,\nавтоотказ, закрытие доставки" as ucorder
+  rectangle "usecase/partner\n\nСинхронизация меню,\nсмены заведения" as ucpartner
+
+  rectangle "domain/order\n\nТаблица переходов FSM,\nсборка заказа из корзины" as domorder
+  rectangle "domain/cart\n\nПересчёт корзины\nи её проблемы" as domcart
+  rectangle "domain/catalog\n\nДоступность позиций" as domcatalog
+
+  rectangle "repo/postgres\n\npgx, транзакция в контексте,\nSQL написан руками" as repo
+}
+
+database "PostgreSQL" as pg
+queue "Kafka" as kafka
+
+customer --> kitchenhttp : REST и SSE-поток заказа
+venue --> partnerhttp : REST, X-Api-Key
+
+kitchenhttp --> idem : POST /orders
+idem --> ucorder
+kitchenhttp --> uccatalog
+kitchenhttp --> uccart
+kitchenhttp --> ucorder
+partnerhttp --> ucpartner
+partnerhttp --> ucorder : accept, cooking,\nready, handover
+
+ucorder --> domorder : разрешён ли переход
+uccart --> domcart : пересчёт и проблемы
+uccatalog --> domcatalog : доступность позиции
+
+ucorder --> repo
+uccart --> repo
+uccatalog --> repo
+ucpartner --> repo
+idem --> repo : сохранённый ответ
+
+repo --> pg
+kafka --> statusconsumer : order.status_changed
+statusconsumer --> hub : Publish
+hub --> kitchenhttp : обновления\nдля открытых потоков
+
+note bottom of ucorder
+  Заказ, снапшот цен, история статусов
+  и строка в outbox_messages пишутся
+  одной транзакцией.
+end note
+
+@enduml

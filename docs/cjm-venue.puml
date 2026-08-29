@@ -1,0 +1,94 @@
+@startuml cjm-venue
+title CJM заведения — от подключения до выданного курьеру заказа
+
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam wrapWidth 420
+skinparam ArrowFontSize 11
+skinparam activity {
+  BackgroundColor #F5F7FA
+  BorderColor #4A6785
+  FontColor #1F2933
+  DiamondBackgroundColor #EEF2F7
+  DiamondBorderColor #4A6785
+  DiamondFontColor #1F2933
+  ArrowColor #4A6785
+}
+skinparam note {
+  BackgroundColor #FBFCFD
+  BorderColor #C7D0DA
+}
+
+start
+
+:Старт кассы заведения
+с ключом, выданным при онбординге;
+
+:Кто мы на площадке
+GET /partner/me → venue_id, orders_topic;
+note right
+  Заведение узнаётся по ключу:
+  venue_id для всех операций
+  берётся из него.
+end note
+
+:Выгрузка меню
+POST /partner/menu — полная синхронизация;
+note right
+  Upsert по external_id, позиции вне
+  выгрузки снимаются с продажи.
+  Повторная выгрузка идемпотентна.
+end note
+
+:Открытие смены
+POST /partner/shift/open;
+
+:Заведение в выдаче каталога
+GET /venues?open_now=true;
+
+repeat
+  :Заказ приходит событием
+  kitchen.orders.v1, ключ venue_id;
+  note right
+    Дедуп по event_id: повторная
+    доставка события оставляет
+    один заказ на кухне.
+  end note
+
+  :Списание остатков заведения;
+
+  if (Берём заказ в работу?) then (да)
+    :POST /partner/orders/{id}/accept
+    с eta_minutes;
+    :POST /partner/orders/{id}/cooking;
+    :POST /partner/orders/{id}/ready;
+    :POST /partner/orders/{id}/handover —
+    заказ уехал с курьером;
+    note right
+      Зона ответственности заведения
+      закончилась: дальше заказ ведёт
+      площадка.
+    end note
+  else (нет)
+    :POST /partner/orders/{id}/reject
+    с причиной;
+    :Остатки возвращаются
+    и на площадке, и у заведения;
+  endif
+
+  if (Блюдо кончилось?) then (да)
+    :PATCH /partner/menu/items/{external_id}
+    is_available: false;
+    :Стоп-лист виден в каталоге;
+  else (нет)
+  endif
+
+repeat while (Смена продолжается?) is (да)
+->нет;
+
+:Закрытие смены
+POST /partner/shift/close;
+
+stop
+
+@enduml

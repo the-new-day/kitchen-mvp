@@ -1,0 +1,195 @@
+@startuml erd
+title Схема БД площадки (migrations/kitchen)
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam defaultFontSize 13
+hide circle
+skinparam class {
+  BackgroundColor #F5F7FA
+  BorderColor #4A6785
+  FontColor #1F2933
+  ArrowColor #4A6785
+}
+
+entity "venues" as venues {
+  * id : uuid <<PK>>
+  --
+  * slug : text <<UQ>>
+  * name : text
+  description : text
+  * address : text
+  lat, lon : double precision
+  * is_active : boolean
+  * is_open : boolean
+  * min_order_amount : bigint
+  * delivery_fee : bigint
+  * avg_cook_minutes : integer
+}
+
+entity "cuisines" as cuisines {
+  * id : uuid <<PK>>
+  --
+  * slug : text <<UQ>>
+  * name : text
+  * position : integer
+}
+
+entity "venue_cuisines" as venue_cuisines {
+  * venue_id : uuid <<FK>>
+  * cuisine_id : uuid <<FK>>
+  --
+  <<PK (venue_id, cuisine_id)>>
+}
+
+entity "venue_api_keys" as keys {
+  * id : uuid <<PK>>
+  --
+  * venue_id : uuid <<FK>>
+  * key_hash : bytea <<UQ>>
+  revoked_at : timestamptz
+}
+
+entity "menu_categories" as categories {
+  * id : uuid <<PK>>
+  --
+  * venue_id : uuid <<FK>>
+  * external_id : text
+  * name : text
+  * position : integer
+  <<UQ (venue_id, external_id)>>
+}
+
+entity "menu_items" as items {
+  * id : uuid <<PK>>
+  --
+  * venue_id : uuid <<FK>>
+  * category_id : uuid <<FK>>
+  * external_id : text
+  * name : text
+  * price : bigint
+  * position : integer
+  * is_available : boolean
+  stock_qty : integer
+  <<UQ (venue_id, external_id)>>
+}
+
+entity "carts" as carts {
+  * id : uuid <<PK>>
+  --
+  * user_id : uuid <<UQ>>
+  venue_id : uuid <<FK>>
+}
+
+entity "cart_items" as cart_items {
+  * id : uuid <<PK>>
+  --
+  * cart_id : uuid <<FK>>
+  * menu_item_id : uuid <<FK>>
+  * qty : integer
+  * price_snapshot : bigint
+  <<UQ (cart_id, menu_item_id)>>
+}
+
+entity "orders" as orders {
+  * id : uuid <<PK>>
+  --
+  * number : text <<UQ>>
+  * user_id : uuid
+  * venue_id : uuid <<FK>>
+  * status : order_status
+  * items_total : bigint
+  * delivery_fee : bigint
+  * total : bigint
+  address : text
+  * phone : text
+  eta_minutes : integer
+  rejection_reason : text
+  * version : bigint
+}
+
+entity "order_items" as order_items {
+  * id : uuid <<PK>>
+  --
+  * order_id : uuid <<FK>>
+  menu_item_id : uuid <<FK>>
+  * external_id : text
+  * name_snapshot : text
+  * price_snapshot : bigint
+  * qty : integer
+  line_total : bigint <<GENERATED>>
+}
+
+entity "order_status_history" as history {
+  * id : bigint <<PK, IDENTITY>>
+  --
+  * order_id : uuid <<FK>>
+  from_status : order_status
+  * to_status : order_status
+  * actor : order_actor
+  reason : text
+  * created_at : timestamptz
+}
+
+entity "idempotency_keys" as idempotency {
+  * user_id : uuid
+  * key : text
+  --
+  * endpoint : text
+  * request_hash : bytea
+  response_status : integer
+  response_body : jsonb
+  * expires_at : timestamptz
+  <<PK (user_id, key)>>
+}
+
+entity "outbox_messages" as outbox {
+  * id : bigint <<PK, IDENTITY>>
+  --
+  * event_id : uuid <<UQ>>
+  * topic : text
+  * key : text
+  * event_type : text
+  * aggregate_id : uuid
+  * aggregate_version : bigint
+  * payload : jsonb
+  published_at : timestamptz
+  * attempts : integer
+  last_error : text
+}
+
+entity "processed_events" as processed {
+  * consumer : text
+  * event_id : uuid
+  --
+  * processed_at : timestamptz
+  <<PK (consumer, event_id)>>
+}
+
+venues ||--o{ venue_cuisines
+cuisines ||--o{ venue_cuisines
+venues ||--o{ keys
+venues ||--o{ categories
+venues ||--o{ items
+categories ||--o{ items
+venues ||--o{ orders
+venues ||--o| carts
+carts ||--o{ cart_items
+items ||--o{ cart_items
+orders ||--o{ order_items
+items ||--o{ order_items
+orders ||--o{ history
+
+note bottom of outbox
+  Ни одной внешней ссылки: событие
+  переживает удаление своего агрегата
+  и публикуется джобой outbox по ORDER BY id.
+end note
+
+note bottom of order_items
+  name_snapshot и price_snapshot копируются
+  при оформлении: заказ — финансовый документ,
+  он не пересчитывается задним числом.
+end note
+
+@enduml

@@ -1,0 +1,96 @@
+@startuml order-sequence
+title Оформление заказа и путь его статусов
+
+skinparam shadowing false
+skinparam defaultFontSize 13
+skinparam ArrowFontSize 11
+skinparam sequence {
+  ArrowColor #4A6785
+  LifeLineBorderColor #4A6785
+  ParticipantBackgroundColor #F5F7FA
+  ParticipantBorderColor #4A6785
+  ParticipantFontColor #1F2933
+  ActorBorderColor #4A6785
+  BoxBackgroundColor #FBFCFD
+  BoxBorderColor #C7D0DA
+}
+skinparam note {
+  BackgroundColor #FBFCFD
+  BorderColor #C7D0DA
+}
+
+actor "Клиент" as customer
+box "Площадка"
+participant "kitchen-api" as api
+database "PostgreSQL" as pg
+participant "worker" as worker
+end box
+queue "Kafka" as kafka
+participant "venue-service" as venue
+
+== Оформление ==
+
+customer -> api : POST /orders\nIdempotency-Key, expected_total
+activate api
+api -> pg : BEGIN
+api -> pg : UPDATE menu_items\nSET stock_qty = stock_qty - qty\nWHERE stock_qty >= qty
+api -> pg : INSERT orders, order_items\nсо снапшотом названий и цен
+api -> pg : INSERT order_status_history\n(→ CREATED, actor = customer)
+api -> pg : INSERT outbox_messages\n(order.created, key = venue_id)
+api -> pg : COMMIT
+api --> customer : 201 Created
+deactivate api
+
+note over api, pg
+  Резерв остатков, заказ, история и событие —
+  одна транзакция: заказ либо есть целиком,
+  либо его нет вовсе.
+end note
+
+== Публикация ==
+
+worker -> pg : SELECT ... WHERE published_at IS NULL\nORDER BY id FOR UPDATE SKIP LOCKED
+worker -> kafka : produce order.created\nсинхронно, до подтверждения брокера
+worker -> pg : UPDATE outbox_messages\nSET published_at = now()
+
+kafka -> venue : order.created
+activate venue
+venue -> venue : дедуп по event_id,\nсписание своих остатков
+deactivate venue
+
+== Работа заведения ==
+
+venue -> api : POST /partner/orders/{id}/accept\nX-Api-Key, eta_minutes
+activate api
+api -> pg : SELECT ... FOR UPDATE
+api -> pg : UPDATE orders\nSET status, version + 1
+api -> pg : INSERT order_status_history
+api -> pg : INSERT outbox_messages\n(order.status_changed, key = order_id)
+api --> venue : 200 OK
+deactivate api
+
+worker -> kafka : produce order.status_changed
+kafka -> api : consume\n(своя группа на каждый инстанс)
+api -> customer : SSE: status_changed ACCEPTED
+
+loop cooking → ready → handover
+  venue -> api : POST /partner/orders/{id}/...
+  api -> customer : SSE: COOKING, READY, DELIVERING
+end
+
+== Закрытие ==
+
+worker -> pg : SELECT ... WHERE status = 'DELIVERING'\nAND updated_at < now() - ORDER_DELIVERY_DURATION
+worker -> pg : тот же доменный переход deliver,\nactor = system, плюс история и outbox
+worker -> kafka : produce order.status_changed
+kafka -> api : consume
+api -> customer : SSE: DELIVERED
+
+note over worker
+  Курьерской логистики в MVP нет:
+  DELIVERING → DELIVERED закрывает
+  джоба courier тем же переходом,
+  каким идут все остальные.
+end note
+
+@enduml
