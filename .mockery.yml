@@ -30,6 +30,9 @@ packages:
     interfaces:
       VenueRepository: {}
       MenuRepository: {}
+  avito-kitchen/internal/consumer:
+    interfaces:
+      Hub: {}
   avito-kitchen/internal/broker/kafka:
     interfaces:
       Transactor: {}

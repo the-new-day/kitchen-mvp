@@ -503,3 +503,49 @@ func (r *OrderRepo) LockUnaccepted(ctx context.Context, orderID uuid.UUID) (orde
 
 	return page[0], nil
 }
+
+// History returns the status entries of an order made after the entry number
+// after, oldest first. Zero returns the history whole.
+func (r *OrderRepo) History(
+	ctx context.Context, orderID uuid.UUID, after int64,
+) ([]order.StatusEntry, error) {
+	const query = `
+		SELECT id, from_status, to_status, actor, reason, created_at
+		FROM order_status_history
+		WHERE order_id = $1 AND id > $2
+		ORDER BY id`
+
+	rows, err := r.db.conn(ctx).Query(ctx, query, orderID, after)
+	if err != nil {
+		return nil, fmt.Errorf("query order status history: %w", err)
+	}
+
+	entries, err := pgx.CollectRows(rows, scanStatusEntry)
+	if err != nil {
+		return nil, fmt.Errorf("scan order status history: %w", err)
+	}
+
+	return entries, nil
+}
+
+// scanStatusEntry reads one entry. The very first one comes from no status at
+// all, and a transition nobody explained carries no reason.
+func scanStatusEntry(row pgx.CollectableRow) (order.StatusEntry, error) {
+	var (
+		entry  order.StatusEntry
+		from   *order.Status
+		reason *string
+	)
+
+	err := row.Scan(&entry.Seq, &from, &entry.To, &entry.Actor, &reason, &entry.ChangedAt)
+
+	if from != nil {
+		entry.From = *from
+	}
+
+	if reason != nil {
+		entry.Reason = *reason
+	}
+
+	return entry, err
+}

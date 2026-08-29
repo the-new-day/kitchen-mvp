@@ -20,7 +20,17 @@ type Config struct {
 	HTTP     HTTP       `envPrefix:"HTTP_"`
 	Postgres Postgres   `envPrefix:"POSTGRES_"`
 	Kafka    Kafka      `envPrefix:"KAFKA_"`
+	SSE      SSE        `envPrefix:"SSE_"`
 	Worker   Worker
+}
+
+// SSE configures the streams of order statuses. Buffer is how many updates a
+// stream may fall behind by before it is closed and the client is left to
+// reconnect and ask for what it missed; Heartbeat keeps an idle stream alive
+// through the proxies between the service and the client.
+type SSE struct {
+	Buffer    int           `env:"BUFFER"    envDefault:"16"`
+	Heartbeat time.Duration `env:"HEARTBEAT" envDefault:"15s"`
 }
 
 // HTTP configures the embedded HTTP server. It sets no write deadline, so

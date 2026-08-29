@@ -70,13 +70,9 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		work(ctx, cfg, db, platform, log)
-	}()
+	})
 
 	defer wg.Wait()
 
@@ -111,7 +107,7 @@ func work(
 	go func() {
 		defer wg.Done()
 
-		consumer.Serve(ctx, broker.ConsumerConfig{
+		broker.Serve(ctx, broker.ConsumerConfig{
 			Brokers: cfg.Kafka.Brokers,
 			Topic:   topic(cfg, venue.OrdersTopic),
 			GroupID: identity,

@@ -121,3 +121,15 @@ type Filter struct {
 	After    *Cursor
 	Limit    int
 }
+
+// StatusEntry is one entry of the status history of an order. Seq numbers the
+// entries of one order and never repeats: it is what a client following the
+// order continues from after a break.
+type StatusEntry struct {
+	Seq       int64
+	From      Status
+	To        Status
+	Actor     Actor
+	Reason    string
+	ChangedAt time.Time
+}

@@ -7,6 +7,7 @@ import (
 	"avito-kitchen/internal/api/kitchenapi"
 	"avito-kitchen/internal/platform/idempotency"
 	"avito-kitchen/internal/transport/http/apierr"
+	"avito-kitchen/internal/transport/sse"
 	cartusecase "avito-kitchen/internal/usecase/cart"
 	catalogusecase "avito-kitchen/internal/usecase/catalog"
 	orderusecase "avito-kitchen/internal/usecase/order"
@@ -21,9 +22,12 @@ const basePath = "/api/v1"
 
 // Server implements the operations of the customer API.
 type Server struct {
-	catalog *catalogusecase.Service
-	cart    *cartusecase.Service
-	order   *orderusecase.Service
+	catalog   *catalogusecase.Service
+	cart      *cartusecase.Service
+	order     *orderusecase.Service
+	hub       *sse.Hub
+	heartbeat time.Duration
+	errs      apierr.Handler
 }
 
 var _ kitchenapi.StrictServerInterface = (*Server)(nil)
@@ -42,10 +46,26 @@ type Idempotency struct {
 	TTL   time.Duration
 }
 
+// Streams is what the operation streaming the events of an order is served by:
+// the hub the transitions arrive in and how often an idle stream is kept warm.
+type Streams struct {
+	Hub       *sse.Hub
+	Heartbeat time.Duration
+}
+
 // Mount registers the customer API on r under /api/v1.
-func Mount(r chi.Router, services Services, keys Idempotency, log *slog.Logger) error {
-	server := &Server{catalog: services.Catalog, cart: services.Cart, order: services.Order}
+func Mount(
+	r chi.Router, services Services, keys Idempotency, streams Streams, log *slog.Logger,
+) error {
 	errs := apierr.Handler{Log: log}
+	server := &Server{
+		catalog:   services.Catalog,
+		cart:      services.Cart,
+		order:     services.Order,
+		hub:       streams.Hub,
+		heartbeat: streams.Heartbeat,
+		errs:      errs,
+	}
 
 	operations, err := idempotentOperations()
 	if err != nil {
@@ -73,6 +93,13 @@ func Mount(r chi.Router, services Services, keys Idempotency, log *slog.Logger) 
 		BaseRouter:       r,
 		Middlewares:      []kitchenapi.MiddlewareFunc{guard, withUser},
 		ErrorHandlerFunc: errs.Request,
+	})
+
+	// The stream of an order is served beside the generated server: it answers
+	// with a response that stays open, which the strict interface cannot carry.
+	r.Group(func(r chi.Router) {
+		r.Use(withUser)
+		r.Get(basePath+"/orders/{order_id}/events", server.streamOrderEvents)
 	})
 
 	return nil

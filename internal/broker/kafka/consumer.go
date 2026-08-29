@@ -21,10 +21,13 @@ type Handler func(ctx context.Context, envelope Envelope) error
 // ConsumerConfig is what a consumer needs to join a topic. GroupID is the
 // consumer group it reads under: a fixed one continues from the last committed
 // offset after a restart, a unique one makes every instance see every message.
+// FromLatest starts a group that has committed nothing at the end of the topic
+// instead of its beginning: what happened before it joined is of no use to it.
 type ConsumerConfig struct {
-	Brokers []string
-	Topic   string
-	GroupID string
+	Brokers    []string
+	Topic      string
+	GroupID    string
+	FromLatest bool
 }
 
 // Consumer reads the events of one topic and hands them over one at a time.
@@ -35,11 +38,17 @@ type Consumer struct {
 
 // NewConsumer returns a consumer of the topic of cfg.
 func NewConsumer(cfg ConsumerConfig, log *slog.Logger) *Consumer {
+	startOffset := kafka.FirstOffset
+	if cfg.FromLatest {
+		startOffset = kafka.LastOffset
+	}
+
 	return &Consumer{
 		reader: kafka.NewReader(kafka.ReaderConfig{
-			Brokers: cfg.Brokers,
-			Topic:   cfg.Topic,
-			GroupID: cfg.GroupID,
+			Brokers:     cfg.Brokers,
+			Topic:       cfg.Topic,
+			GroupID:     cfg.GroupID,
+			StartOffset: startOffset,
 		}),
 		log: log.With(slog.String("topic", cfg.Topic), slog.String("group", cfg.GroupID)),
 	}

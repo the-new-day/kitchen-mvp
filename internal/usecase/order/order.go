@@ -34,6 +34,7 @@ type Repository interface {
 	Get(ctx context.Context, userID, orderID uuid.UUID) (order.Order, error)
 	GetForVenue(ctx context.Context, venueID, orderID uuid.UUID) (order.Order, error)
 	List(ctx context.Context, filter order.Filter) ([]order.Order, error)
+	History(ctx context.Context, orderID uuid.UUID, after int64) ([]order.StatusEntry, error)
 	LockForCustomer(ctx context.Context, userID, orderID uuid.UUID) (order.Order, error)
 	LockForVenue(ctx context.Context, venueID, orderID uuid.UUID) (order.Order, error)
 	LockUnaccepted(ctx context.Context, orderID uuid.UUID) (order.Order, error)
