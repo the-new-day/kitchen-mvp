@@ -97,16 +97,28 @@ type Orders struct {
 func Load() (Config, error) {
 	var cfg Config
 
+	if err := ParseInto(&cfg); err != nil {
+		return Config{}, err
+	}
+
+	return cfg, nil
+}
+
+// ParseInto fills target from the environment. It is what Load is built on and
+// what a service carrying a configuration of its own parses through, so that
+// every binary of the repository reads the same value the same way.
+func ParseInto(target any) error {
 	opts := env.Options{
 		FuncMap: map[reflect.Type]env.ParserFunc{
 			reflect.TypeFor[slog.Level](): parseLogLevel,
 		},
 	}
-	if err := env.ParseWithOptions(&cfg, opts); err != nil {
-		return Config{}, fmt.Errorf("parse environment: %w", err)
+
+	if err := env.ParseWithOptions(target, opts); err != nil {
+		return fmt.Errorf("parse environment: %w", err)
 	}
 
-	return cfg, nil
+	return nil
 }
 
 func parseLogLevel(v string) (any, error) {

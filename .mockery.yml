@@ -41,3 +41,12 @@ packages:
       Publisher: {}
       Orders: {}
       Keys: {}
+  avito-kitchen/venue/internal/consumer:
+    interfaces:
+      Kitchen: {}
+  avito-kitchen/venue/internal/usecase/kitchen:
+    interfaces:
+      Transactor: {}
+      Dishes: {}
+      Orders: {}
+      PartnerClient: {}

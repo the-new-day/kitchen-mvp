@@ -100,8 +100,8 @@ func (_c *MockInbox_Remember_Call) Run(run func(ctx context.Context, consumer st
 	return _c
 }
 
-func (_c *MockInbox_Remember_Call) Return(b bool, err error) *MockInbox_Remember_Call {
-	_c.Call.Return(b, err)
+func (_c *MockInbox_Remember_Call) Return(fresh bool, err error) *MockInbox_Remember_Call {
+	_c.Call.Return(fresh, err)
 	return _c
 }
 

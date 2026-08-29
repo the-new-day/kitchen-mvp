@@ -37,7 +37,6 @@ fmt:
 generate:
 	go tool oapi-codegen -config api/openapi/kitchen.cfg.yaml api/openapi/kitchen.yaml
 	go tool oapi-codegen -config api/openapi/partner.cfg.yaml api/openapi/partner.yaml
-	go tool oapi-codegen -config api/openapi/venue.cfg.yaml api/openapi/venue.yaml
 .PHONY: generate
 
 mocks:
