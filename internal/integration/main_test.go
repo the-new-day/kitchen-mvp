@@ -25,10 +25,10 @@ func TestMain(m *testing.M) {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
-	defer cancel()
 
 	built, err := start(ctx)
 	if err != nil {
+		cancel()
 		fmt.Fprintf(os.Stderr, "integration: %v\n", err)
 
 		os.Exit(1)
@@ -38,6 +38,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	live.stop()
+	cancel()
 	os.Exit(code)
 }
 

@@ -48,7 +48,7 @@ func follow(ctx context.Context, client *http.Client, url, userID string) (*stre
 	}
 
 	if res.StatusCode != http.StatusOK {
-		res.Body.Close()
+		_ = res.Body.Close()
 
 		return nil, fmt.Errorf("the event stream answered %s", res.Status)
 	}
@@ -57,7 +57,7 @@ func follow(ctx context.Context, client *http.Client, url, userID string) (*stre
 	failed := make(chan error, 1)
 
 	go func() {
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		defer close(updates)
 
 		if err := read(ctx, res.Body, updates); err != nil && ctx.Err() == nil {

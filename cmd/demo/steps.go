@@ -59,7 +59,7 @@ func (d *demo) waitForPlatform(ctx context.Context) (string, error) {
 		if err != nil {
 			return false, nil //nolint:nilerr // the platform is still starting
 		}
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 
 		return res.StatusCode == http.StatusOK, nil
 	})

@@ -182,14 +182,14 @@ func (e *eater) statuses(ctx context.Context, t *testing.T, s *stand, orderID uu
 	}
 
 	if res.StatusCode != http.StatusOK {
-		res.Body.Close()
+		_ = res.Body.Close()
 		t.Fatalf("the event stream answered %s", res.Status)
 	}
 
 	updates := make(chan string, 16)
 
 	go func() {
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		defer close(updates)
 
 		scanner := bufio.NewScanner(res.Body)
@@ -302,7 +302,7 @@ func unpublished(ctx context.Context, t *testing.T, s *stand) int {
 	if err != nil {
 		t.Fatalf("connect to the database: %v", err)
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	var waiting int
 
@@ -323,7 +323,7 @@ func stockOf(ctx context.Context, t *testing.T, s *stand, sku string) int {
 	if err != nil {
 		t.Fatalf("connect to the database: %v", err)
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	var stock int
 

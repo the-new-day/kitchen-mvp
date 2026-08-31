@@ -230,7 +230,7 @@ func migrate(ctx context.Context, dsn string) error {
 	if err != nil {
 		return fmt.Errorf("connect for migrations: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	for _, file := range files {
 		statements, err := os.ReadFile(file) //nolint:gosec // the migrations of this repository
@@ -253,7 +253,7 @@ func fixture(ctx context.Context, dsn string) (uuid.UUID, map[string]uuid.UUID, 
 	if err != nil {
 		return uuid.Nil, nil, fmt.Errorf("connect for the fixture: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 
 	venueID, categoryID := uuid.New(), uuid.New()
 	hash := sha256.Sum256([]byte(venueKey))

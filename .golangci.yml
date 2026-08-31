@@ -20,6 +20,7 @@ linters:
       enable-all: true
       disable:
         - fieldalignment # readability of config structs beats a few padding bytes
+        - shadow # `if err := f(); err != nil` and per-closure `err` are idiomatic here
     revive:
       rules:
         - name: exported

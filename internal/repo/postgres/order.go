@@ -504,7 +504,6 @@ func (r *OrderRepo) LockUnaccepted(ctx context.Context, orderID uuid.UUID) (orde
 	return page[0], nil
 }
 
-
 // StaleDelivering returns the orders that have been on their way since before
 // the given moment, oldest first. Only the identifiers are read: each of them
 // is then closed on its own, under its own lock.
@@ -560,6 +559,7 @@ func (r *OrderRepo) LockDelivering(ctx context.Context, orderID uuid.UUID) (orde
 
 	return page[0], nil
 }
+
 // History returns the status entries of an order made after the entry number
 // after, oldest first. Zero returns the history whole.
 func (r *OrderRepo) History(
